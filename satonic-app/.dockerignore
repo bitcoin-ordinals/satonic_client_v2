@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Next.js build outputs
+.next
+out
+
+# Version control
+.git
+.gitignore
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# IDE specific files
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache directories
+.npm
+.eslintcache
+
+# Docker specific
+Dockerfile
+.dockerignore
+
+# Development specific files
+README.md
+*.md 
