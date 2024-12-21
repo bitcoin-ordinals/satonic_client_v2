@@ -9,6 +9,7 @@ import { WalletModal } from "../wallet/WalletModal"
 import { toast } from "react-hot-toast"
 
 export default function Navbar() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false)
   const [wallets, setWallets] = useState<Record<string, WalletConnection>>({
     unisat: { isInstalled: false, isConnected: false, address: null },
@@ -58,31 +59,6 @@ export default function Navbar() {
     }
   }
 
-  const connectWallet = async (type: string) => {
-    switch (type) {
-      case 'unisat':
-        if (!wallets.unisat.isInstalled) {
-          window.open('https://unisat.io/download', '_blank')
-          return
-        }
-        try {
-          const accounts = await window.unisat.requestAccounts()
-          setWallets(prev => ({
-            ...prev,
-            unisat: {
-              ...prev.unisat,
-              isConnected: true,
-              address: accounts[0]
-            }
-          }))
-        } catch (error) {
-          console.error('Error connecting to Unisat:', error)
-        }
-        break
-      // Add more wallet cases here
-    }
-  }
-
   const disconnectWallet = async (type: string) => {
     switch (type) {
       case 'unisat':
@@ -119,40 +95,59 @@ export default function Navbar() {
     switch (walletType) {
       case 'unisat':
         try {
+          // Step 1: Check if Unisat wallet is installed
           if (!window.unisat) {
-            throw new Error('Unisat wallet not installed')
+            throw new Error('Unisat wallet not installed');
           }
-          
-          const accounts = await window.unisat.requestAccounts()
+  
+          // Step 2: Connect the wallet
+          const accounts = await window.unisat.requestAccounts();
           if (!accounts || accounts.length === 0) {
-            throw new Error('No accounts found')
+            throw new Error('No accounts found');
           }
-
-          // Handle successful connection
+  
+          // Save the account in the state
           setWallets(prev => ({
             ...prev,
             unisat: {
               ...prev.unisat,
               isConnected: true,
-              address: accounts[0]
-            }
-          }))
-          
+              address: accounts[0],
+            },
+          }));
+  
+          // Step 3: Request a signature
+          const message = `Sign this message to authenticate Satonic. Nonce: ${Math.random()
+            .toString(36)
+            .substring(2)}`;
+          const signature = await window.unisat.signMessage(message);
+  
+          // Log the results
+          console.log('User signature:', signature);
+          console.log('Signed message:', message);
+  
+          // Step 4: Update authentication state
+          setIsAuthenticated(true); // Mark the user as authenticated
+          setIsWalletModalOpen(false); // Close the modal
         } catch (error) {
+          // Handle connection or signing errors
           if (error instanceof Error) {
-            console.error('Error connecting to Unisat:', error.message)
+            console.error('Error connecting or signing with Unisat:', error.message);
           }
-          // Show user-friendly error message
+  
+          // Show a user-friendly error message
           toast({
             title: 'Connection Failed',
-            description: 'Failed to connect to Unisat wallet',
-            variant: 'destructive'
-          })
+            description: 'Failed to connect or obtain a signature from Unisat wallet.',
+            variant: 'destructive',
+          });
         }
-        break
-      // Add other wallet cases here
+        break;
+  
+      // Add other wallet cases here if needed
     }
-  }
+  };
+  
 
   return (
     <nav className="border-b">
@@ -174,26 +169,29 @@ export default function Navbar() {
         
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            {Object.entries(wallets).some(([_, w]) => w.isConnected) ? (
-              // Show connected wallets
-              Object.entries(wallets)
-                .filter(([_, w]) => w.isConnected)
-                .map(([type, wallet]) => (
-                  <div key={type} className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
-                    </span>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={async () => await disconnectWallet(type)}
-                      className={neonButtonStyle}
-                    >
-                      Disconnect
-                    </Button>
-                  </div>
-                ))
+            {isAuthenticated ? (
+              // Show authenticated content
+              <div className="flex items-center gap-2">
+                {Object.entries(wallets)
+                  .filter(([_, w]) => w.isConnected)
+                  .map(([type, wallet]) => (
+                    <div key={type} className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+                      </span>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={async () => await disconnectWallet(type)}
+                        className={neonButtonStyle}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  ))}
+              </div>
             ) : (
+              // Show "Connect Wallet" button for unauthenticated users
               <Button 
                 onClick={() => setIsWalletModalOpen(true)}
                 className={neonButtonStyle}
@@ -210,7 +208,7 @@ export default function Navbar() {
           <ModeToggle />
         </div>
       </div>
-
+  
       <WalletModal
         isOpen={isWalletModalOpen}
         onClose={() => setIsWalletModalOpen(false)}
@@ -223,5 +221,6 @@ export default function Navbar() {
         }}
       />
     </nav>
-  )
+  );
+  
 }

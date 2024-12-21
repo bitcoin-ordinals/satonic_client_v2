@@ -69,16 +69,18 @@ export function AuthCheck({ children }: AuthCheckProps) {
   const handleWalletSelect = async (type: string) => {
     if (type === 'unisat' && wallets.unisat) {
       try {
-        const accounts = await window.unisat.requestAccounts()
-        if (accounts.length > 0) {
-          setIsAuthenticated(true)
-          setIsWalletModalOpen(false)
-        }
+        const message = `Sign this message to authenticate Satonic. Nonce: ${Math.random().toString(36).substring(2)}`;
+        const signature = await window.unisat.signMessage(message);
+        console.log('User signature:', signature);
+        console.log('Signed message:', message);
+        setIsAuthenticated(true);
+        setIsWalletModalOpen(false);
       } catch (error) {
-        console.error('Error connecting wallet:', error)
+        console.error('Error during signing:', error);
       }
     }
-  }
+  };
+  
 
   if (!isAuthenticated) {
     return (

@@ -39,7 +39,6 @@ const WALLET_OPTIONS = [
     icon: '/wallets/phantom.png',
     status: 'Multichain'
   },
-  // Add more wallets as needed
 ]
 
 export function WalletModal({ isOpen, onClose, onSelectWallet, installedWallets }: WalletModalProps) {

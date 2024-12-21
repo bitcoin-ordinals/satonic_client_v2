@@ -3,7 +3,7 @@
 import { WalletBalance as WalletBalanceType } from "@/types/wallet"
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card"
 import { satoshisToAmount } from "@/utils/wallet"
-import { useEffect, useState } from "react"
+
 
 interface Props {
   address: string | null
