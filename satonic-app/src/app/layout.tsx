@@ -1,5 +1,6 @@
 import { Inter } from "next/font/google"
 import { Providers } from "./providers"
+import { Toaster } from "react-hot-toast";
 import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -17,7 +18,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} bg-background min-h-screen`}>
-        <Providers>{children}</Providers>
+        <Providers>
+          <Toaster position="top-right" reverseOrder={false} />
+          {children}
+        </Providers>
       </body>
     </html>
   )

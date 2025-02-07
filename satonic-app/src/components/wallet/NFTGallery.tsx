@@ -42,7 +42,6 @@ export default function NFTGallery({ address }: Props) {
 
         const result = await response.json();
 
-        // Ensure data.data exists and is an array
         const inscriptions = Array.isArray(result.data) ? result.data : [];
         const imageNFTs = inscriptions.filter((nft: NFT) => nft.content_type.startsWith("image/"));
 

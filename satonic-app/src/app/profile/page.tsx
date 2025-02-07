@@ -38,7 +38,7 @@ export default function ProfilePage() {
           setBalance(balance)
         }
       } catch (e) {
-        toast.error('Failed to connect to wallet')
+        toast.error(`Failed to connect to wallet: ${e.message}`)
       }
     }
 
