@@ -13,7 +13,7 @@ import { useUnisat } from "@/hooks/useUnisat";
 
 export default function Navbar() {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const { isConnected, address, connect, isConnecting } = useUnisat();
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [wallets, setWallets] = useState<Record<string, WalletConnection>>({
@@ -66,10 +66,12 @@ export default function Navbar() {
     }
   };
 
-  const disconnectWallet = async (walletType: string) => {
-    if (walletType === "unisat") {
-      // We don't have a proper disconnect method in Unisat wallet
-      // Just reset the state
+  const disconnectWallet = async () => {
+    try {
+      // Use the auth context's logout function which properly handles state
+      logout();
+      
+      // Reset local state
       setWallets(prev => ({
         ...prev,
         unisat: {
@@ -79,8 +81,10 @@ export default function Navbar() {
         },
       }));
       
-      // Redirect to logout endpoint
-      router.push("/api/auth/logout");
+      toast.success("Wallet disconnected successfully");
+    } catch (error) {
+      console.error("Error disconnecting wallet:", error);
+      toast.error("Failed to disconnect wallet");
     }
   };
 
@@ -140,7 +144,7 @@ export default function Navbar() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => disconnectWallet("unisat")}
+                      onClick={disconnectWallet}
                       className={neonButtonStyle}
                     >
                       Disconnect

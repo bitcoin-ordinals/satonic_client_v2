@@ -1,8 +1,8 @@
 import { toast } from 'react-hot-toast';
 
 // API configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
-const AUTH_TOKEN_KEY = 'satonic_auth_token';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
+export const AUTH_TOKEN_KEY = 'satonic_auth_token';
 
 // Define proper response types
 export interface ApiError {
@@ -429,5 +429,117 @@ export const api = {
   system: {
     // Health check - verify backend is available
     healthCheck: () => apiRequest<{ status: string }>('/health'),
-  }
-}; 
+  },
+
+  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'GET',
+      headers,
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'API request failed');
+    }
+
+    return {
+      success: true,
+      data
+    };
+  },
+
+  async post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'API request failed');
+    }
+
+    return {
+      success: true,
+      data
+    };
+  },
+
+  async put<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'API request failed');
+    }
+
+    return {
+      success: true,
+      data
+    };
+  },
+
+  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'DELETE',
+      headers,
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'API request failed');
+    }
+
+    return {
+      success: true,
+      data
+    };
+  },
+};
+
+export default api; 

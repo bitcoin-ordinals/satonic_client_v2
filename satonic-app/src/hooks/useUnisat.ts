@@ -10,7 +10,26 @@ export function useUnisat() {
   const [isConnecting, setIsConnecting] = useState(false);
   const { user, refreshUser } = useAuth();
 
-  // Check if wallet is connected on component mount
+  // Reset state when authentication changes
+  useEffect(() => {
+    const handleAuthChange = () => {
+      // If not authenticated anymore, reset state
+      if (!isAuthenticated()) {
+        setIsConnected(false);
+        setAddress(null);
+      }
+    };
+
+    // Listen for auth changes
+    window.addEventListener('auth_changed', handleAuthChange);
+    
+    // Clean up listener on unmount
+    return () => {
+      window.removeEventListener('auth_changed', handleAuthChange);
+    };
+  }, []);
+
+  // Check if wallet is connected on component mount or when user changes
   useEffect(() => {
     // Check if the app is already authenticated
     if (isAuthenticated()) {
@@ -19,6 +38,10 @@ export function useUnisat() {
         // Set the address from the user's wallet
         setAddress(user.wallets[0].address);
         setIsConnected(true);
+      } else {
+        // No wallets found, reset state
+        setAddress(null);
+        setIsConnected(false);
       }
     } else {
       // Not authenticated, check wallet connection status

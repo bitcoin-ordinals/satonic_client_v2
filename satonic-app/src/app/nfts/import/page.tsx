@@ -11,9 +11,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, ImportNFTRequest } from '@/lib/api'
 import { toast } from 'react-hot-toast'
+import { AuthGuard } from '@/components/auth/AuthGuard'
 
 export default function ImportNFTPage() {
-  const { user, isAuthenticated, isLoading } = useAuth()
+  const { user, isAuthenticated } = useAuth()
   const router = useRouter()
   
   const [inscriptionId, setInscriptionId] = useState('')
@@ -27,12 +28,6 @@ export default function ImportNFTPage() {
     valid: boolean;
     message: string;
   } | null>(null)
-
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/auth/login')
-    }
-  }, [isLoading, isAuthenticated, router])
 
   useEffect(() => {
     if (user?.wallets && user.wallets.length > 0 && !selectedWalletId) {
@@ -73,8 +68,8 @@ export default function ImportNFTPage() {
         } else {
           toast.error(response.data.message)
         }
-      } else {
-        throw new Error(response.error || 'Failed to validate NFT')
+      } else if (!response.success) {
+        toast.error(response.error || 'Failed to validate NFT')
       }
     } catch (error) {
       console.error('Error validating NFT:', error)
@@ -105,8 +100,8 @@ export default function ImportNFTPage() {
       if (response.success && response.data) {
         toast.success('NFT imported successfully')
         router.push(`/nfts/${response.data.id}`)
-      } else {
-        throw new Error(response.error || 'Failed to import NFT')
+      } else if (!response.success) {
+        toast.error(response.error || 'Failed to import NFT')
       }
     } catch (error) {
       console.error('Error importing NFT:', error)
@@ -116,106 +111,100 @@ export default function ImportNFTPage() {
     }
   }
 
-  if (isLoading) {
-    return <div className="flex justify-center items-center min-h-screen">Loading...</div>
-  }
-
-  if (!user) {
-    return null
-  }
-
   return (
-    <div className="container mx-auto py-10">
-      <h1 className="text-4xl font-bold mb-6">Import NFT</h1>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Import a Bitcoin Ordinal</CardTitle>
-          <CardDescription>
-            Import an NFT from your wallet to display and auction on Satonic
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="wallet">Wallet</Label>
-            <Select value={selectedWalletId} onValueChange={setSelectedWalletId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a wallet" />
-              </SelectTrigger>
-              <SelectContent>
-                {user.wallets?.map((wallet) => (
-                  <SelectItem key={wallet.id} value={wallet.id}>
-                    {wallet.address.substring(0, 8)}...{wallet.address.substring(wallet.address.length - 8)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="inscriptionId">Inscription ID</Label>
-            <Input
-              id="inscriptionId"
-              value={inscriptionId}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInscriptionId(e.target.value)}
-              placeholder="Enter the inscription ID"
-            />
-            <p className="text-sm text-muted-foreground">
-              The unique identifier for your Ordinal inscription
-            </p>
-          </div>
-          
-          {validationResult?.valid && (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="collection">Collection (Optional)</Label>
-                <Input
-                  id="collection"
-                  value={collection}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCollection(e.target.value)}
-                  placeholder="Enter collection name"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="title">Title (Optional)</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
-                  placeholder="Enter a title for your NFT"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="description">Description (Optional)</Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
-                  placeholder="Describe your NFT"
-                  rows={4}
-                />
-              </div>
-            </>
-          )}
-        </CardContent>
-        <CardFooter className="flex justify-between">
-          <Button variant="outline" onClick={() => router.push('/nfts')}>
-            Cancel
-          </Button>
-          
-          {!validationResult?.valid ? (
-            <Button onClick={handleValidateNFT} disabled={isValidating || !inscriptionId || !selectedWalletId}>
-              {isValidating ? 'Validating...' : 'Validate NFT'}
+    <AuthGuard message="Connect your wallet to import your NFTs">
+      <div className="container mx-auto py-10">
+        <h1 className="text-4xl font-bold mb-6">Import NFT</h1>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle>Import a Bitcoin Ordinal</CardTitle>
+            <CardDescription>
+              Import an NFT from your wallet to display and auction on Satonic
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="wallet">Wallet</Label>
+              <Select value={selectedWalletId} onValueChange={setSelectedWalletId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a wallet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {user?.wallets?.map((wallet) => (
+                    <SelectItem key={wallet.id} value={wallet.id}>
+                      {wallet.address.substring(0, 8)}...{wallet.address.substring(wallet.address.length - 8)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="inscriptionId">Inscription ID</Label>
+              <Input
+                id="inscriptionId"
+                value={inscriptionId}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInscriptionId(e.target.value)}
+                placeholder="Enter the inscription ID"
+              />
+              <p className="text-sm text-muted-foreground">
+                The unique identifier for your Ordinal inscription
+              </p>
+            </div>
+            
+            {validationResult?.valid && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="collection">Collection (Optional)</Label>
+                  <Input
+                    id="collection"
+                    value={collection}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCollection(e.target.value)}
+                    placeholder="Enter collection name"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title (Optional)</Label>
+                  <Input
+                    id="title"
+                    value={title}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
+                    placeholder="Enter a title for your NFT"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description (Optional)</Label>
+                  <Textarea
+                    id="description"
+                    value={description}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+                    placeholder="Describe your NFT"
+                    rows={4}
+                  />
+                </div>
+              </>
+            )}
+          </CardContent>
+          <CardFooter className="flex justify-between">
+            <Button variant="outline" onClick={() => router.push('/nfts')}>
+              Cancel
             </Button>
-          ) : (
-            <Button onClick={handleImportNFT} disabled={isImporting}>
-              {isImporting ? 'Importing...' : 'Import NFT'}
-            </Button>
-          )}
-        </CardFooter>
-      </Card>
-    </div>
+            
+            {!validationResult?.valid ? (
+              <Button onClick={handleValidateNFT} disabled={isValidating || !inscriptionId || !selectedWalletId}>
+                {isValidating ? 'Validating...' : 'Validate NFT'}
+              </Button>
+            ) : (
+              <Button onClick={handleImportNFT} disabled={isImporting}>
+                {isImporting ? 'Importing...' : 'Import NFT'}
+              </Button>
+            )}
+          </CardFooter>
+        </Card>
+      </div>
+    </AuthGuard>
   )
 } 
