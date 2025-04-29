@@ -1,24 +1,26 @@
 'use client'
 
-import { ThemeProvider } from "../components/theme-provider"
-import Navbar from "../components/layout/Navbar"
-import { Toaster } from "@/components/ui/toaster"
-import { SessionProvider } from 'next-auth/react'
+import { ThemeProvider } from "next-themes"
+import { WalletProvider } from "@/components/providers/wallet-provider"
+import { AuthProvider } from "@/components/providers/auth-provider"
+import { Toaster } from "react-hot-toast"
+import Navbar from "@/components/layout/Navbar"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="dark"
-        enableSystem={false}
-      >
-        <Navbar />
-        <main className="container mx-auto px-4 py-8">
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <AuthProvider>
+        <WalletProvider>
+          <Navbar />
           {children}
-        </main>
-        <Toaster />
-      </ThemeProvider>
-    </SessionProvider>
+          <Toaster position="bottom-right" />
+        </WalletProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 } 

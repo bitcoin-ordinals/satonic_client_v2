@@ -7,9 +7,14 @@ import { useEffect, useState } from "react";
 import type { WalletConnection } from "@/types/wallet";
 import { WalletModal } from "../wallet/WalletModal";
 import { toast } from "react-hot-toast";
+import { useRouter } from "next/navigation";
+import { useAuth } from "../providers/auth-provider";
+import { useUnisat } from "@/hooks/useUnisat";
 
 export default function Navbar() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
+  const { isConnected, address, connect, isConnecting } = useUnisat();
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [wallets, setWallets] = useState<Record<string, WalletConnection>>({
     unisat: { isInstalled: false, isConnected: false, address: null },
@@ -25,108 +30,79 @@ export default function Navbar() {
     !important`;
 
   useEffect(() => {
-    checkWalletInstallations();
+    if (typeof window !== "undefined") {
+      checkWalletInstallations();
+    }
   }, []);
-
-  const checkWalletInstallations = () => {
-    if (typeof window !== "undefined" && window.unisat) {
-      setWallets((prev) => ({
+  
+  // Update wallet state based on connected address
+  useEffect(() => {
+    if (address) {
+      setWallets(prev => ({
         ...prev,
-        unisat: { ...prev.unisat, isInstalled: true },
+        unisat: {
+          ...prev.unisat,
+          isConnected: true,
+          address: address,
+        },
       }));
-      checkUnisatConnection();
+    }
+  }, [address]);
+
+  const checkWalletInstallations = async () => {
+    if (typeof window === "undefined") return;
+    
+    // Check if Unisat is installed
+    const unisatExists = !!(window as any).unisat;
+    if (unisatExists) {
+      setWallets(prev => ({
+        ...prev,
+        unisat: { 
+          isInstalled: true, 
+          isConnected: isConnected,
+          address: address 
+        },
+      }));
     }
   };
 
-  const checkUnisatConnection = async () => {
-    if (!window.unisat) {
-      console.log("Unisat wallet not found");
-      return false;
-    }
-
-    try {
-      const accounts = await window.unisat.getAccounts();
-      return accounts.length > 0;
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error("Error checking Unisat connection:", error.message);
-      }
-      return false;
-    }
-  };
-
-  const disconnectWallet = async (type: string) => {
-    switch (type) {
-      case "unisat":
-        try {
-          if (window.unisat) {
-            await window.unisat.disconnect();
-            setWallets((prev) => ({
-              ...prev,
-              unisat: {
-                ...prev.unisat,
-                isConnected: false,
-                address: null,
-              },
-            }));
-            window.location.reload();
-          }
-        } catch (error) {
-          if (error instanceof Error) {
-            console.error("Error disconnecting from Unisat:", error.message);
-            toast({
-              title: "Disconnect Failed",
-              description: "Failed to disconnect from Unisat wallet",
-              variant: "destructive",
-            });
-          }
-        }
-        break;
+  const disconnectWallet = async (walletType: string) => {
+    if (walletType === "unisat") {
+      // We don't have a proper disconnect method in Unisat wallet
+      // Just reset the state
+      setWallets(prev => ({
+        ...prev,
+        unisat: {
+          ...prev.unisat,
+          isConnected: false,
+          address: null,
+        },
+      }));
+      
+      // Redirect to logout endpoint
+      router.push("/api/auth/logout");
     }
   };
 
   const handleWalletSelect = async (walletType: string) => {
+    if (typeof window === "undefined") return;
+    
     switch (walletType) {
       case "unisat":
         try {
-          if (!window.unisat) {
+          if (!(window as any).unisat) {
             throw new Error("Unisat wallet not installed");
           }
 
-          const accounts = await window.unisat.requestAccounts();
-          if (!accounts || accounts.length === 0) {
-            throw new Error("No accounts found");
+          const success = await connect();
+          
+          if (success) {
+            setIsWalletModalOpen(false);
+            router.refresh(); // Refresh page to update auth state
           }
-
-          setWallets((prev) => ({
-            ...prev,
-            unisat: {
-              ...prev.unisat,
-              isConnected: true,
-              address: accounts[0],
-            },
-          }));
-
-          const message = `Sign this message to authenticate Satonic. Nonce: ${Math.random()
-            .toString(36)
-            .substring(2)}`;
-          const signature = await window.unisat.signMessage(message);
-
-          console.log("User signature:", signature);
-          console.log("Signed message:", message);
-
-          setIsAuthenticated(true);
-          setIsWalletModalOpen(false);
-        } catch (error) {
-          if (error instanceof Error) {
-            console.error("Error connecting or signing with Unisat:", error.message);
-          }
-
-          toast({
-            title: "Connection Failed",
-            description: "Failed to connect or obtain a signature from Unisat wallet.",
-            variant: "destructive",
-          });
+        } catch (error: any) {
+          console.error("Error connecting to wallet:", error);
+          toast.error(error.message || "Failed to connect to wallet");
         }
         break;
     }
@@ -156,23 +132,21 @@ export default function Navbar() {
           <div className="flex items-center gap-2">
             {isAuthenticated ? (
               <div className="flex items-center gap-2">
-                {Object.entries(wallets)
-                  .filter(([_, w]) => w.isConnected)
-                  .map(([type, wallet]) => (
-                    <div key={type} className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">
-                        {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => await disconnectWallet(type)}
-                        className={neonButtonStyle}
-                      >
-                        Disconnect
-                      </Button>
-                    </div>
-                  ))}
+                {user?.wallets && user.wallets.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono text-red-500">
+                      {user.wallets[0].address?.slice(0, 6)}...{user.wallets[0].address?.slice(-4)}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => disconnectWallet("unisat")}
+                      className={neonButtonStyle}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <Button
@@ -183,8 +157,9 @@ export default function Navbar() {
                   borderColor: "#ef4444",
                   color: "#ef4444",
                 }}
+                disabled={isConnecting}
               >
-                Connect Wallet
+                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
               </Button>
             )}
           </div>

@@ -2,6 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { useEffect, useState } from "react";
+import { CreateAuctionCard } from "../auction/CreateAuctionCard";
 
 interface NFT {
   inscription_id: string;
@@ -58,6 +59,13 @@ export default function NFTGallery({ address }: Props) {
     fetchNFTs();
   }, [address]);
 
+  const refreshNFTs = () => {
+    if (address) {
+      setLoading(true);
+      // Implement refresh logic if needed after auction creation
+    }
+  };
+
   return (
     <Card className="bg-black border-red-500 border-2 mt-6">
       <CardHeader>
@@ -82,9 +90,10 @@ export default function NFTGallery({ address }: Props) {
                   alt={`Ordinal #${nft.inscription_number}`}
                   className="w-full h-48 object-cover rounded-lg mb-2"
                 />
-                <p className="text-red-500 font-mono text-sm">
+                <p className="text-red-500 font-mono text-sm mb-2">
                   Ordinal #{nft.inscription_number}
                 </p>
+                <CreateAuctionCard nft={nft} onSuccess={refreshNFTs} />
               </div>
             ))}
           </div>
