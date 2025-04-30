@@ -9,24 +9,24 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Wallet, Email, api, UserProfileUpdateRequest } from '@/lib/api'
+import { Wallet, Email, api } from '@/lib/api'
 import { toast } from 'react-hot-toast'
 import { NetworkSelector, BitcoinNetwork } from '@/components/network-selector'
 import { WalletModal } from '@/components/wallet/WalletModal'
 import { useUnisat } from '@/hooks/useUnisat'
+import { Copy } from 'lucide-react'
 
 export default function ProfilePage() {
   const { user, isAuthenticated, isLoading, refreshUser } = useAuth()
   const { connect } = useUnisat()
   const router = useRouter()
-  const [isPending, setIsPending] = useState(false)
-  const [username, setUsername] = useState('')
-  const [bio, setBio] = useState('')
-  const [avatar, setAvatar] = useState('')
   const [walletBalances, setWalletBalances] = useState<Record<string, { balance: number; available: number }>>({})
   const [currentNetwork, setCurrentNetwork] = useState<BitcoinNetwork>('testnet')
   const [isNetworkSwitching, setIsNetworkSwitching] = useState(false)
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false)
+  const [inscriptions, setInscriptions] = useState<any[]>([])
+  const [loadingInscriptions, setLoadingInscriptions] = useState(false)
+
   
   // Add wallet installation detection state for the modal
   const [installedWallets, setInstalledWallets] = useState({
@@ -43,19 +43,15 @@ export default function ProfilePage() {
   }, [isLoading, isAuthenticated, router])
 
   useEffect(() => {
-    if (user?.profile) {
-      setUsername(user.profile.username || '')
-      setBio(user.profile.bio || '')
-      setAvatar(user.profile.avatar_url || '')
-    }
-  }, [user])
-
-  useEffect(() => {
     if (user?.wallets && user.wallets.length > 0) {
       fetchWalletBalances(user.wallets)
       detectCurrentNetwork()
     }
   }, [user?.wallets])
+
+  useEffect(() => {
+    fetchInscriptions()
+  }, [user?.wallets])  
 
   // Detect installed wallets
   useEffect(() => {
@@ -116,30 +112,18 @@ export default function ProfilePage() {
     }
   }
 
-  const handleUpdateProfile = async () => {
-    if (!user) return
-
-    setIsPending(true)
-    
+  const fetchInscriptions = async () => {
+    if (!user?.wallets?.[0]?.address) return
+  
+    setLoadingInscriptions(true)
     try {
-      const profileData: UserProfileUpdateRequest = {
-        username,
-        bio,
-        avatar_url: avatar
-      }
-
-      const response = await api.user.updateProfile(profileData)
-      if (response.success) {
-        await refreshUser()
-        toast.success('Profile updated successfully')
-      } else {
-        throw new Error(response.error || 'Failed to update profile')
-      }
-    } catch (error) {
-      console.error('Error updating profile:', error)
-      toast.error('Failed to update profile')
+      const res = await fetch(`http://localhost:8080/api/fetch/inscriptions?address=${user.wallets[0].address}`)
+      const data = await res.json()
+      setInscriptions(data)
+    } catch (err) {
+      console.error('Failed to fetch inscriptions', err)
     } finally {
-      setIsPending(false)
+      setLoadingInscriptions(false)
     }
   }
 
@@ -241,51 +225,58 @@ export default function ProfilePage() {
           <TabsContent value="profile">
             <Card>
               <CardHeader>
-                <CardTitle>Profile Information</CardTitle>
-                <CardDescription>
-                  Update your profile information visible to other users
-                </CardDescription>
+                <CardTitle>Your Ordinals</CardTitle>
+                <CardDescription>These NFTs are fetched from your wallet on UniSat</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    value={username}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUsername(e.target.value)}
-                    placeholder="Enter a username"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Bio</Label>
-                  <Textarea
-                    id="bio"
-                    value={bio}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setBio(e.target.value)}
-                    placeholder="Tell us about yourself"
-                    rows={4}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="avatar">Avatar URL</Label>
-                  <Input
-                    id="avatar"
-                    value={avatar}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAvatar(e.target.value)}
-                    placeholder="https://example.com/your-avatar.jpg"
-                  />
-                </div>
+              <CardContent>
+                {loadingInscriptions ? (
+                  <p>Loading inscriptions...</p>
+                ) : inscriptions.length === 0 ? (
+                  <p>No inscriptions found.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {inscriptions.map((nft) => (
+                      <div
+                        key={nft.inscription_id}
+                        className="border rounded-xl p-3 bg-black/80 hover:shadow-lg transition duration-200"
+                      >
+                        <div className="relative w-full aspect-square rounded overflow-hidden border border-red-500/20">
+                          {nft.inscription_url ? (
+                            <img
+                              src={nft.inscription_url}
+                              alt={`Ordinal ${nft.inscription_id}`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                              Unsupported content
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-3 text-center space-y-1">
+                          <h3 className="text-lg font-bold text-red-400">Ordinal</h3>
+                          <div className="flex items-center justify-center gap-1 text-sm font-mono text-muted-foreground">
+                            <span>...{nft.inscription_id.slice(-3)}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(nft.inscription_id)
+                                toast.success('Copied!', { duration: 1500 })
+                              }}
+                              className="text-gray-400 hover:text-green-400 transition p-1"
+                              title="Copy inscription ID"
+                            >
+                              <Copy className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
-              <CardFooter>
-                <Button onClick={handleUpdateProfile} disabled={isPending}>
-                  {isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </CardFooter>
             </Card>
           </TabsContent>
-          
           {/* Wallets Tab */}
           <TabsContent value="wallets">
             <Card>
