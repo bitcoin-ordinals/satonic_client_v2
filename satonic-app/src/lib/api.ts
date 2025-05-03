@@ -327,7 +327,7 @@ export const api = {
     get: (id: string) => apiRequest<Auction>(`/auctions/${id}`),
     
     // Create a new auction
-    create: (data: CreateAuctionRequest) => apiRequest<Auction>('/auctions', {
+    create: (data: CreateAuctionRequest) => apiRequest<Auction>('/auctions/create', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
