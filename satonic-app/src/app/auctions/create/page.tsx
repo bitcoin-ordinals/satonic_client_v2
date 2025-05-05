@@ -296,73 +296,83 @@ function CreateAuctionContent() {
 
     try {
       setIsSubmitting(true);
+      const unisat = window.unisat as any;
 
-      // If NFT is not imported yet, import it first
-      let nftId = selectedNft.id;
-      if (!selectedNft.imported) {
-        const importResponse = await api.nft.importNFT({
-          wallet_id: user?.wallets?.[0]?.id || "",
-          inscription_id: selectedNft.inscription_id,
-          title: selectedNft.title || `Inscription #${selectedNft.inscription_number}`,
-          description: selectedNft.description || `Bitcoin Ordinal Inscription #${selectedNft.inscription_number}`,
-          collection: "Bitcoin Ordinals"
-        });
-        
-        if (!importResponse.success) {
-          throw new Error(importResponse.error || "Failed to import NFT before auction creation");
-        }
-        
-        nftId = importResponse.data.id;
-      }
+      // STEP 1: Get seller pubkey
+      const sellerPubKey = await unisat.getPublicKey();
 
-      // Calculate start and end times based on selection
-      let startTime = new Date();
-      let endTime = new Date();
-      
-      if (startType === "scheduled") {
-        startTime = startDate;
-      }
-      
-      if (durationType === "quick") {
-        // For quick durations (in minutes)
-        endTime = new Date(startTime.getTime());
-        endTime.setMinutes(endTime.getMinutes() + parseInt(duration));
-      } else {
-        // For custom date selection
-        endTime = endDate;
-      }
+      // STEP 2: Create multisig address (backend combines sellerPubKey with PLATFORM_TAPROOT_PUBKEY)
+      const multisigRes = await fetch("http://localhost:8080/api/onchain/create-multisig", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seller_pubkey: sellerPubKey })
+      });
 
-      // Create auction
+      if (!multisigRes.ok) throw new Error("Multisig creation failed");
+      const { descriptor, address: multisigAddressRaw  } = await multisigRes.json();
+      const multisigAddress = multisigAddressRaw.replace(/"/g, "").trim();
+
+      console.log("Generated multisig address:", multisigAddress);
+
+      // STEP 3: Prepare escrow PSBT (lock NFT to multisig)
+      const psbtRes = await fetch("http://localhost:8080/api/onchain/create-escrow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inscription_utxo: selectedNft.inscription_id.split("i")[0],
+          vout: parseInt(selectedNft.inscription_id.split("i")[1]),
+          multisig_address: multisigAddress,
+          multisig_script: descriptor,
+          amount: (parseInt(startPrice) / 100_000_000).toFixed(8)
+        })
+      });
+
+      if (!psbtRes.ok) throw new Error("Failed to create escrow PSBT");
+      const { psbt } = await psbtRes.json();
+
+      // STEP 4: Sign PSBT
+      const signedPsbt = await unisat.signPsbt(psbt);
+
+      // STEP 5: Finalize + broadcast
+      const finalizeRes = await fetch("http://localhost:8080/api/onchain/finalize-escrow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signed_psbt: signedPsbt })
+      });
+
+      if (!finalizeRes.ok) throw new Error("Broadcast failed");
+      const { txid } = await finalizeRes.json();
+
+      // STEP 6: Calculate start/end time
+      let startTime = startType === "scheduled" ? startDate : new Date();
+      let endTime = durationType === "quick"
+          ? new Date(startTime.getTime() + parseInt(duration) * 60 * 1000)
+          : endDate;
+
+      // STEP 7: Call auction creation endpoint
       const auctionData: CreateAuctionRequest = {
-        nft_id: nftId,
+        nft_id: selectedNft.id,
         start_price: parseFloat(startPrice),
         reserve_price: reservePrice ? parseFloat(reservePrice) : undefined,
         start_time: startTime.toISOString(),
         end_time: endTime.toISOString(),
-        psbt: "placeholder_psbt" // This should be generated properly
+        psbt
       };
 
       const response = await api.auction.create(auctionData);
-      
+
       if (response.success && response.data) {
-        toast({
-          title: "Success",
-          description: "Auction created successfully!"
-        });
+        toast({ title: "Auction Created", description: "Success!" });
         router.push(`/auctions/${response.data.id}`);
       } else {
-        console.error("Failed to create auction:", !response.success ? response.error : "Unknown error");
-        toast({
-          title: "Error",
-          description: !response.success ? response.error : "Failed to create auction. Please try again.",
-          variant: "destructive"
-        });
+        throw new Error("Auction creation failed");
       }
+
     } catch (error) {
-      console.error("Error creating auction:", error);
+      console.error("Error:", error);
       toast({
         title: "Error",
-        description: "Error creating auction. Please try again.",
+        description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive"
       });
     } finally {
