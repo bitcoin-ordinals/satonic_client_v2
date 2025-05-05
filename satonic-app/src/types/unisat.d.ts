@@ -10,6 +10,11 @@ declare global {
     signMessage: (message: string, type: string) => Promise<any>;
     on: (event: string, handler: (...args: any[]) => void) => void;
     switchChain?: (chainEnum: string) => Promise<void>;
+    getChain?: () => Promise<{
+      enum: string;
+      name: string;
+      network: 'livenet' | 'testnet';
+    }>;
   }
 
   interface Window {
