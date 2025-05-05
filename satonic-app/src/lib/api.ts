@@ -60,6 +60,15 @@ export interface Wallet {
   type: string;
   created_at: string;
   updated_at: string;
+  btc_satoshi: number;
+  btc_pending_satoshi: number;
+  btc_utxo_count: number;
+  inscription_satoshi: number;
+  inscription_pending_satoshi: number;
+  inscription_utxo_count: number;
+  satoshi: number;
+  pending_satoshi: number;
+  utxo_count: number;
 }
 
 export interface Email {
@@ -89,21 +98,19 @@ export interface NFT {
 }
 
 export interface Auction {
-  id: string;
+  title: string;
+  auction_id: string;
   nft_id: string;
-  seller_wallet_id: string;
+  seller_address: string;
   start_price: number;
-  reserve_price?: number;
-  buy_now_price?: number;
   current_bid?: number;
   current_bidder_id?: string;
   start_time: string;
   end_time: string;
   status: 'draft' | 'active' | 'completed' | 'cancelled';
-  psbt: string;
+  psbt?: string;
   created_at: string;
   updated_at: string;
-  nft?: NFT;
   bids?: Bid[];
 }
 
@@ -111,7 +118,7 @@ export interface Bid {
   id: string;
   auction_id: string;
   bidder_id: string;
-  wallet_id: string;
+  wallet_address: string;
   amount: number;
   created_at: string;
   accepted: boolean;
@@ -121,21 +128,22 @@ export interface Bid {
 export interface BidRequest {
   auction_id: string;
   amount: number;
-  wallet_id: string;
+  wallet_address: string;
 }
 
 export interface CreateAuctionRequest {
   nft_id: string;
+  seller_address?: string; 
+  title?: string;
+  description?: string;
   start_price: number;
-  reserve_price?: number;
-  buy_now_price?: number;
   start_time: string;
   end_time: string;
-  psbt: string;
+  psbt?: string;
 }
 
 export interface ImportNFTRequest {
-  wallet_id: string;
+  wallet_address: string;
   inscription_id: string;
   collection?: string;
   title?: string;
@@ -144,9 +152,15 @@ export interface ImportNFTRequest {
 }
 
 export interface WalletBalanceResponse {
-  address: string;
-  balance: number;
-  available: number;
+  satoshi?: number;
+  pendingSatoshi?: number;
+  utxoCount?: number;
+  btcSatoshi?: number;
+  btcPendingSatoshi?: number;
+  btcUtxoCount?: number;
+  inscriptionSatoshi?: number;
+  inscriptionPendingSatoshi?: number;
+  inscriptionUtxoCount?: number;
 }
 
 export interface UserProfileUpdateRequest {
@@ -169,7 +183,6 @@ const apiRequest = async <T>(
     
     if (token) {
       customHeaders['Authorization'] = `Bearer ${token}`;
-      console.log(`Adding auth header for ${endpoint}`);
     } else {
       console.log(`No auth token for request to ${endpoint}`);
     }
@@ -183,19 +196,8 @@ const apiRequest = async <T>(
       }
     };
     
-    console.log(`API request to ${endpoint}:`, {
-      method: options.method || 'GET',
-      hasAuthHeader: !!token,
-      url: `${API_BASE_URL}${endpoint}`
-    });
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
-
-    console.log(`Response from ${endpoint}:`, {
-      status: response.status,
-      statusText: response.statusText,
-      contentType: response.headers.get('content-type')
-    });
 
     // Handle non-JSON responses (like 204 No Content)
     if (response.status === 204) {
@@ -223,9 +225,7 @@ const apiRequest = async <T>(
       if (contentType && contentType.includes('application/json')) {
         data = await response.json();
       } else {
-        // For non-JSON responses, get the text
         const text = await response.text();
-        console.error('Non-JSON response:', text);
         throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
       }
     } catch (parseError) {
@@ -234,14 +234,8 @@ const apiRequest = async <T>(
       const text = await response.text().catch(() => 'Could not read response text');
       throw new Error(`Failed to parse response: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
     }
-    
-    // If the server response has success and data fields, use those
-    if ('success' in data) {
-      // Ensure we're returning the correct discriminated union type
-      return data.success 
-        ? { success: true, data: data.data as T } 
-        : { success: false, error: data.error };
-    }
+
+    console.log("response", data);
     
     // Otherwise, construct an ApiResponse based on HTTP status
     return response.ok 
@@ -274,7 +268,7 @@ export const api = {
       total_count: number;
       page: number;
       page_size: number;
-    }>(`/nfts/address/${address}`),
+    }>(`/nfts/address/?address=${address}`),
     
     // Get a specific NFT by ID
     getNFT: (id: string) => apiRequest<NFT>(`/nfts/${id}`),
@@ -327,10 +321,14 @@ export const api = {
     get: (id: string) => apiRequest<Auction>(`/auctions/${id}`),
     
     // Create a new auction
-    create: (data: CreateAuctionRequest) => apiRequest<Auction>('/auctions/create', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    create: (data: CreateAuctionRequest) => {
+      
+      return apiRequest<Auction>('/auctions/create', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    
+    },
     
     // Finalize an auction
     finalize: (id: string, signature: string) => apiRequest<Auction>(`/auctions/${id}/finalize`, {
@@ -357,9 +355,10 @@ export const api = {
     }),
 
     // Get wallet balance
-    getWalletBalance: (walletId: string) => apiRequest<WalletBalanceResponse>(
-      `/wallets/${walletId}/balance`
+    getWalletBalance: (address: string) => apiRequest<WalletBalanceResponse>(
+      `/wallets/${address}`
     ),
+
   },
   
   // Auth Endpoints

@@ -224,7 +224,7 @@ class UnisatService {
         throw new Error(response.error || 'Failed to fetch inscriptions');
       }
       // Transform the response to match UnisatInscription interface
-      const inscriptions = response.data.nfts.map((nft: any) => ({
+      const inscriptions = (response.data?.nfts || []).map((nft: any) => ({
         inscriptionId: nft.id,
         inscriptionNumber: parseInt(nft.inscription_id || '0'),
         address: nft.wallet_id,
@@ -299,7 +299,7 @@ class UnisatService {
         throw new Error(response.error || 'Failed to fetch utxos');
       }
       // Transform the response to match UnisatUtxo interface
-      return response.data.nfts.map((nft: any) => ({
+      return (response.data?.nfts || []).map((nft: any) => ({
         txId: nft.metadata?.genesis_tx || '',
         outputIndex: 0,
         satoshis: 0,

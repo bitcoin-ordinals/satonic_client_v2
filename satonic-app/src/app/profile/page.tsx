@@ -16,6 +16,28 @@ import { WalletModal } from '@/components/wallet/WalletModal'
 import { useUnisat } from '@/hooks/useUnisat'
 import { Copy } from 'lucide-react'
 
+// Define the NFT interface based on the API response
+interface NFT {
+  inscription_id: string;
+  content_type?: string;
+  inscription_url?: string;
+  content?: string;
+}
+
+// Define the UniSat response interface
+interface UnisatBalanceResponse {
+  address: string;
+  satoshi: number;
+  pendingSatoshi: number;
+  utxoCount: number;
+  btcSatoshi: number;
+  btcPendingSatoshi: number;
+  btcUtxoCount: number;
+  inscriptionSatoshi: number;
+  inscriptionPendingSatoshi: number;
+  inscriptionUtxoCount: number;
+}
+
 export default function ProfilePage() {
   const { user, isAuthenticated, isLoading, refreshUser } = useAuth()
   const { connect } = useUnisat()
@@ -24,8 +46,9 @@ export default function ProfilePage() {
   const [currentNetwork, setCurrentNetwork] = useState<BitcoinNetwork>('testnet')
   const [isNetworkSwitching, setIsNetworkSwitching] = useState(false)
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false)
-  const [inscriptions, setInscriptions] = useState<any[]>([])
+  const [inscriptions, setInscriptions] = useState<NFT[]>([])
   const [loadingInscriptions, setLoadingInscriptions] = useState(false)
+  const [loadingBalances, setLoadingBalances] = useState(false)
 
   
   // Add wallet installation detection state for the modal
@@ -66,23 +89,47 @@ export default function ProfilePage() {
   }, [])
 
   const fetchWalletBalances = async (wallets: Wallet[]) => {
+    setLoadingBalances(true)
     const balances: Record<string, { balance: number; available: number }> = {}
 
     for (const wallet of wallets) {
       try {
-        const response = await api.user.getWalletBalance(wallet.id)
-        if (response.success && response.data) {
+        const response = await api.user.getWalletBalance(wallet.address)
+        console.log(`RAW RESPONSE:`, response)
+
+        if (response.success && 'data' in response && response.data) {
+          console.log(`Received balance for ${wallet.address}:`, response.data)
+          
+          const totalBalance = (response.data.btcSatoshi || 0) + (response.data.inscriptionSatoshi || 0)
+          const availableBalance = (response.data.btcSatoshi || 0) + (response.data.inscriptionSatoshi || 0) - 
+                                 ((response.data.btcPendingSatoshi || 0) + (response.data.inscriptionPendingSatoshi || 0))
+
           balances[wallet.id] = {
-            balance: response.data.balance,
-            available: response.data.available
+            balance: totalBalance,
+            available: availableBalance
           }
+
+        } else {
+          console.warn(`No valid balance data for wallet ${wallet.id}:`, response)
         }
       } catch (error) {
         console.error(`Failed to fetch balance for wallet ${wallet.id}:`, error)
+        // Show a toast notification only once (for the first error)
+        if (Object.keys(balances).length === 0) {
+          toast.error(`Failed to fetch wallet balance. Please try again later.`)
+        }
       }
     }
 
-    setWalletBalances(balances)
+    console.log("Final wallet balances:", balances)
+    if (Object.keys(balances).length > 0) {
+      setWalletBalances(balances)
+    } else if (wallets.length > 0) {
+      // Only show this message if we have wallets but couldn't fetch any balances
+      console.error("Failed to fetch balances for all wallets")
+    }
+    
+    setLoadingBalances(false)
   }
 
   const detectCurrentNetwork = async () => {
@@ -100,11 +147,8 @@ export default function ProfilePage() {
         if (network === 'livenet') {
           setCurrentNetwork('mainnet')
         } else if (network === 'testnet') {
-          // Since Unisat doesn't distinguish between testnet and testnet4,
-          // we'll only update the state if it's not already set to testnet4
-          if (currentNetwork !== 'testnet4') {
-            setCurrentNetwork('testnet')
-          }
+          // For testnet, default to testnet4 since that's what our backend seems to expect
+          setCurrentNetwork('testnet4')
         }
       } catch (error) {
         console.error('Failed to detect current network:', error)
@@ -117,11 +161,31 @@ export default function ProfilePage() {
   
     setLoadingInscriptions(true)
     try {
-      const res = await fetch(`http://localhost:8080/api/fetch/inscriptions?address=${user.wallets[0].address}`)
-      const data = await res.json()
-      setInscriptions(data)
+      const res = await api.nft.getNFTs(user.wallets[0].address)
+      
+      if (res.success && 'data' in res && res.data) {
+        // Check if data is directly an array of NFTs
+        if (Array.isArray(res.data)) {
+          console.log('Setting inscriptions from direct array data')
+          setInscriptions(res.data as NFT[])
+        } 
+        // Check for the previous format with nfts property
+        else if (res.data.nfts && Array.isArray(res.data.nfts)) {
+          console.log('Setting inscriptions from data.nfts property')
+          setInscriptions(res.data.nfts as NFT[])
+        }
+        else {
+          console.error('NFT data is in unexpected format:', res)
+          setInscriptions([])
+        }
+      } else {
+        // If data is not available, set to empty array
+        console.error('NFT data is not in expected format:', res)
+        setInscriptions([])
+      }
     } catch (err) {
       console.error('Failed to fetch inscriptions', err)
+      setInscriptions([]) // Ensure inscriptions is set to empty array on error
     } finally {
       setLoadingInscriptions(false)
     }
@@ -130,6 +194,7 @@ export default function ProfilePage() {
   const handleNetworkChange = async (network: BitcoinNetwork) => {
     try {
       setIsNetworkSwitching(true)
+      console.log(`Attempting to switch to network: ${network}`)
       
       // Check if wallet provider exists
       if (typeof window !== 'undefined' && window.unisat) {
@@ -138,13 +203,19 @@ export default function ProfilePage() {
           const unisatWallet = window.unisat as any
           
           // Map our network names to what Unisat expects
-          // Unisat supports mainnet as 'livenet', and both testnet and testnet4 directly
-          let unisatNetwork: string = network;
+          // Unisat only supports 'livenet' and 'testnet' (no testnet4)
+          let unisatNetwork: string;
           if (network === 'mainnet') {
             unisatNetwork = 'livenet';
+          } else if (network === 'testnet4') {
+            unisatNetwork = 'testnet';
+          } else if ((network as string) === 'testnet3') {
+            unisatNetwork = 'testnet';
+          } else {
+            unisatNetwork = network as string;
           }
           
-          console.log(`Switching to ${unisatNetwork} in Unisat`)
+          console.log(`Switching to ${unisatNetwork} in Unisat (mapped from ${network})`)
           
           // Switch network in wallet
           await unisatWallet.switchNetwork(unisatNetwork)
@@ -159,7 +230,12 @@ export default function ProfilePage() {
           
           // Refresh wallet balances
           if (user?.wallets && user.wallets.length > 0) {
+            console.log("Refreshing wallet balances after network switch")
             fetchWalletBalances(user.wallets)
+            // Also refresh inscriptions after network switch
+            fetchInscriptions()
+          } else {
+            console.log("No wallets found to refresh after network switch")
           }
         } catch (error: any) {
           console.error('Failed to switch network:', error)
@@ -175,8 +251,12 @@ export default function ProfilePage() {
           }
         }
       } else {
+        console.warn('Wallet not available for network switch')
         toast.error('Wallet not available. Please connect your wallet first.')
       }
+    } catch (err) {
+      console.error('Unexpected error during network switch:', err)
+      toast.error('An unexpected error occurred while switching networks')
     } finally {
       setIsNetworkSwitching(false)
     }
@@ -231,7 +311,7 @@ export default function ProfilePage() {
               <CardContent>
                 {loadingInscriptions ? (
                   <p>Loading inscriptions...</p>
-                ) : inscriptions.length === 0 ? (
+                ) : !inscriptions || inscriptions.length === 0 ? (
                   <p>No inscriptions found.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -311,17 +391,28 @@ export default function ProfilePage() {
                             <p className="text-sm font-mono text-muted-foreground break-all">{wallet.address}</p>
                           </div>
                           <div className="text-right">
-                            {walletBalances[wallet.id] ? (
+                            {loadingBalances ? (
+                              <p className="text-sm text-muted-foreground">Loading balance...</p>
+                            ) : walletBalances[wallet.id] ? (
                               <>
                                 <p className="font-medium">
-                                  {(walletBalances[wallet.id].balance / 100000000).toFixed(8)} BTC
+                                  {(walletBalances[wallet.id].balance / 100000000).toFixed(8)} {currentNetwork === 'mainnet' ? 'BTC' : 'tBTC'}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                  Available: {(walletBalances[wallet.id].available / 100000000).toFixed(8)} BTC
+                                  Available: {(walletBalances[wallet.id].available / 100000000).toFixed(8)} {currentNetwork === 'mainnet' ? 'BTC' : 'tBTC'}
                                 </p>
                               </>
                             ) : (
-                              <p className="text-sm text-muted-foreground">Loading balance...</p>
+                              <div className="text-right">
+                                <p className="text-sm text-muted-foreground mb-1">Could not load balance</p>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => wallet && fetchWalletBalances([wallet])}
+                                >
+                                  Retry
+                                </Button>
+                              </div>
                             )}
                           </div>
                         </div>

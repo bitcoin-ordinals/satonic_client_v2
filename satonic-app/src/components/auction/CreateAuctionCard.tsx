@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { toast } from "react-hot-toast"
-import { service } from "@/lib/serviceProvider"
+import { api } from "@/lib/api"
 
 interface NFT {
   inscription_id: string;
@@ -57,7 +57,7 @@ export function CreateAuctionCard({ nft, onSuccess }: CreateAuctionCardProps) {
       const dummyPsbt = `psbt_${Math.random().toString(36).substring(2, 15)}`;
       
       // Create auction API call
-      const response = await service.auction.create({
+      const response = await api.auction.create({
         nft_id: nft.id || nft.inscription_id, // Use id if available, otherwise use inscription_id
         start_price: startPriceSats,
         start_time: now.toISOString(),
