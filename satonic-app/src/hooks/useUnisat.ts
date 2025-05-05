@@ -3,6 +3,7 @@ import { unisatService } from '@/services/unisat';
 import { useAuth } from '@/components/providers/auth-provider';
 import { isAuthenticated } from '@/lib/api';
 import { toast } from 'react-hot-toast';
+import '@/types';
 
 export function useUnisat() {
   const [isConnected, setIsConnected] = useState(false);
@@ -79,7 +80,9 @@ export function useUnisat() {
         const isConnected = await checkConnection();
         return isConnected;
       }
-      
+
+      await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
+
       // Not authenticated, need to connect and authenticate
       console.log('Not authenticated, connecting wallet and getting signature');
       const success = await unisatService.connect();

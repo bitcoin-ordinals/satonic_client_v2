@@ -21,6 +21,15 @@ export default function LoginPage() {
       setLoading(true);
       setError('');
 
+      await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
+
+      const chain = await window.unisat?.getChain?.();
+      if (!chain) {
+        console.warn('Unable to fetch chain info.');
+        return;
+      }
+      console.log(`Current wallet enum: ${chain.enum}`);
+
       // Connect wallet
       const address = await connectWallet();
       if (!address) {

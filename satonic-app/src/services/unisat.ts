@@ -41,27 +41,23 @@ async function ensureWalletAuthenticated(): Promise<boolean> {
     try {
       // First try the standard testnet option which most wallets support
       try {
-        await (window as any).unisat.switchNetwork('testnet');
+        await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
       } catch (error) {
         console.log('Failed to switch to standard testnet, trying testnet4:', error);
         // If standard testnet fails, try testnet4 as a fallback
         // but don't throw an error if this also fails, as we'll handle it below
         try {
-          await (window as any).unisat.switchNetwork('testnet4');
+          await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
         } catch (secondError) {
           console.warn('Failed to switch to testnet4 as well:', secondError);
           // Continue anyway, as the wallet might already be on testnet
         }
       }
-      
+
       // Verify we're on an appropriate network
-      const network = await (window as any).unisat.getNetwork();
-      console.log('Current wallet network:', network);
+      const network = await (window as any).unisat.getChain();
+      console.log('Current wallet network(testing purposes):', network);
       
-      if (network !== 'testnet' && network !== 'livenet') {
-        toast.error('Please switch your wallet to Testnet manually');
-        return false;
-      }
     } catch (error) {
       console.error('Network verification failed:', error);
       // Don't block authentication - some wallets might work anyway
