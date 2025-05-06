@@ -17,7 +17,35 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'images.pexels.com',
       },
+      // Add additional patterns for NFT image hosting
+      {
+        protocol: 'https',
+        hostname: '**.unisat.io',
+      },
+      {
+        protocol: 'http',
+        hostname: '**.unisat.io',
+      },
+      {
+        protocol: 'https',
+        hostname: 'ordiscan.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.ordiscan.com',
+      },
+      // For testing, allow all domains - remove in production
+      {
+        protocol: 'https',
+        hostname: '*',
+      },
+      {
+        protocol: 'http',
+        hostname: '*',
+      },
     ],
+    // Enable dangerous unoptimized images for debugging
+    unoptimized: true,
   },
   eslint: {
     // Warning: This allows production builds to successfully complete even if

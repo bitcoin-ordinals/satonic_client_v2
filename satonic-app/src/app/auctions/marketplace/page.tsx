@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { AuctionCard } from '@/components/auction/AuctionCard'
-import { Auction } from '@/lib/api'
-import { service } from '@/lib/serviceProvider'
+import api, { Auction } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -39,7 +38,7 @@ export default function MarketplacePage() {
     setError(null);
 
     try {
-      const response = await service.auction.getAll({
+      const response = await api.auction.getAll({
         status: activeTab === 'all' ? undefined : activeTab,
       });
 
@@ -116,13 +115,13 @@ export default function MarketplacePage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {auctions.map((auction) => (
-                <AuctionCard key={auction.id} auction={{
-                  id: auction.id,
-                  title: auction.nft?.title || `NFT #${auction.nft_id}`,
-                  image: auction.nft?.image_url || `https://placehold.co/600x400/black/red?text=NFT`,
+                <AuctionCard key={auction.auction_id} auction={{
+                  id: auction.auction_id,
+                  title: auction.title || `NFT #${auction.nft_id}`,
+                  image: `https://placehold.co/600x400/black/red?text=NFT`,
                   currentBid: auction.current_bid ? auction.current_bid / 100000000 : (auction.start_price ? auction.start_price / 100000000 : 0),
                   endTime: new Date(auction.end_time),
-                  creator: auction.seller_wallet_id ? auction.seller_wallet_id.slice(0, 8) + '...' : 'Unknown Seller'
+                  creator: auction.seller_address ? auction.seller_address.slice(0, 8) + '...' : 'Unknown Seller'
                 }} />
               ))}
             </div>

@@ -48,7 +48,6 @@ type WalletNFT = {
   description?: string;
   wallet_address: string;
   network: string;
-  imported: boolean;
 };
 
 function CreateAuctionContent() {
@@ -60,7 +59,6 @@ function CreateAuctionContent() {
   const [walletNfts, setWalletNfts] = useState<WalletNFT[]>([]);
   const [selectedNft, setSelectedNft] = useState<WalletNFT | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAuctionForm, setShowAuctionForm] = useState(false);
 
@@ -68,7 +66,6 @@ function CreateAuctionContent() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startPrice, setStartPrice] = useState("");
-  const [reservePrice, setReservePrice] = useState("");
   const [durationType, setDurationType] = useState("quick"); // "quick" or "custom"
   const [duration, setDuration] = useState("1"); // Default 1 minute
   const [startDate, setStartDate] = useState<Date>(new Date());
@@ -98,103 +95,56 @@ function CreateAuctionContent() {
 
     try {
       setIsLoading(true);
-
-      // First, fetch NFTs that are already in our database
-      const dbResponse = await api.nft.getUserNFTs();
-      const dbNfts = dbResponse.success && dbResponse.data?.nfts ? dbResponse.data.nfts : [];
+      const walletAddress = user.wallets[0]?.address;
       
-      // Store inscription IDs that are already in our system
-      const existingInscriptionIds = new Set(dbNfts.map(nft => nft.inscription_id));
-      
-      // Combine wallets NFTs
-      let allNfts: WalletNFT[] = [];
-      
-      // Try fetching inscriptions from the same endpoint as the profile page
-      try {
-        const walletAddress = user.wallets?.[0]?.address;
-        if (!walletAddress) {
-          throw new Error("No wallet address available");
-        }
-        
-        const res = await fetch(`http://localhost:8080/api/fetch/inscriptions?address=${walletAddress}`);
-        const inscriptionsData = await res.json();
-        
-        if (Array.isArray(inscriptionsData) && inscriptionsData.length > 0) {
-          const walletInscriptions = inscriptionsData.map((insc: any) => ({
-            id: insc.inscription_id,
-            inscription_id: insc.inscription_id,
-            inscription_number: insc.inscription_number || 0,
-            image_url: insc.inscription_url,
-            content_url: insc.inscription_url,
-            title: `Inscription #${insc.inscription_number || insc.inscription_id.slice(0, 8)}`,
-            description: `Bitcoin ordinal inscription`,
-            wallet_address: walletAddress,
-            network: insc.network || 'unknown',
-            imported: existingInscriptionIds.has(insc.inscription_id)
-          }));
-          
-          allNfts = walletInscriptions;
-        }
-      } catch (fetchError) {
-        console.error("Error fetching from API endpoint:", fetchError);
-        
-        // Fallback to direct wallet fetch if API fetch fails
-        if (typeof window !== 'undefined' && window.unisat) {
-          try {
-            const unisatWallet = window.unisat as any;
-            
-            // Get inscriptions from the connected wallet
-            const inscriptionsResult = await unisatWallet.getInscriptions(0, 100);
-            
-            if (inscriptionsResult && inscriptionsResult.inscriptions) {
-              const walletAddress = (await unisatWallet.getAccounts())[0];
-              const network = await unisatWallet.getNetwork();
-              
-              const walletInscriptions = inscriptionsResult.inscriptions.map((insc: any) => ({
-                id: insc.inscriptionId,
-                inscription_id: insc.inscriptionId,
-                inscription_number: insc.inscriptionNumber,
-                image_url: insc.content || insc.preview,
-                content_url: insc.content,
-                title: `Inscription #${insc.inscriptionNumber}`,
-                description: `Bitcoin ordinal inscription #${insc.inscriptionNumber}`,
-                wallet_address: walletAddress,
-                network: network === 'livenet' ? 'mainnet' : network,
-                imported: existingInscriptionIds.has(insc.inscriptionId)
-              }));
-              
-              allNfts.push(...walletInscriptions);
-            }
-          } catch (walletError) {
-            console.error("Error fetching from wallet:", walletError);
-        toast({
-              title: "Wallet Error",
-              description: "Could not fetch inscriptions from wallet. Please check that your wallet is connected properly.",
-              variant: "destructive"
-            });
-          }
-        }
+      if (!walletAddress) {
+        throw new Error("No wallet address available");
       }
       
-      // Add already imported NFTs if they weren't found in the wallet
-      dbNfts.forEach(nft => {
-        if (!allNfts.some(walletNft => walletNft.inscription_id === nft.inscription_id)) {
-          allNfts.push({
-            id: nft.id,
-            inscription_id: nft.inscription_id,
-            inscription_number: parseInt(nft.token_id) || 0,
-            image_url: nft.image_url,
-            content_url: nft.content_url,
-            title: nft.title,
-            description: nft.description,
-            wallet_address: user.wallets?.[0]?.address || "",
-            network: 'unknown',
-            imported: true
-          });
-        }
-      });
+      const res = await api.nft.getNFTs(walletAddress);
       
-      setWalletNfts(allNfts);
+      if (res.success && 'data' in res && res.data) {
+        // Check if data is directly an array of NFTs
+        if (Array.isArray(res.data)) {
+          console.log('Setting NFTs from direct array data');
+          const walletNfts = res.data.map((nft: any) => ({
+            id: nft.inscription_id || nft.id,
+            inscription_id: nft.inscription_id || nft.id,
+            inscription_number: nft.inscription_number || 0,
+            image_url: nft.image_url || nft.inscription_url,
+            content_url: nft.content_url || nft.inscription_url,
+            title: nft.title || `Inscription #${nft.inscription_number || nft.inscription_id?.slice(0, 8) || ''}`,
+            description: nft.description || `Bitcoin ordinal inscription`,
+            wallet_address: walletAddress,
+            network: nft.network || 'unknown'
+          }));
+          setWalletNfts(walletNfts);
+        } 
+        // Check for the nested format with nfts property
+        else if (res.data.nfts && Array.isArray(res.data.nfts)) {
+          console.log('Setting NFTs from data.nfts property');
+          const walletNfts = res.data.nfts.map((nft: any) => ({
+            id: nft.inscription_id || nft.id,
+            inscription_id: nft.inscription_id || nft.id,
+            inscription_number: nft.inscription_number || 0,
+            image_url: nft.image_url || nft.inscription_url,
+            content_url: nft.content_url || nft.inscription_url,
+            title: nft.title || `Inscription #${nft.inscription_number || nft.inscription_id?.slice(0, 8) || ''}`,
+            description: nft.description || `Bitcoin ordinal inscription`,
+            wallet_address: walletAddress,
+            network: nft.network || 'unknown'
+          }));
+          setWalletNfts(walletNfts);
+        }
+        else {
+          console.error('NFT data is in unexpected format:', res);
+          setWalletNfts([]);
+        }
+      } else {
+        // If data is not available, set to empty array
+        console.error('NFT data is not in expected format:', res);
+        setWalletNfts([]);
+      }
     } catch (error) {
       console.error("Error fetching NFTs:", error);
       toast({
@@ -202,71 +152,9 @@ function CreateAuctionContent() {
         description: "Failed to load your NFTs. Please try again.",
         variant: "destructive"
       });
+      setWalletNfts([]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const importNft = async (nft: WalletNFT) => {
-    if (nft.imported) return; // Already imported
-    
-    try {
-      setIsImporting(true);
-      
-      // Ensure we have the user's wallets
-      if (!user?.wallets || user.wallets.length === 0) {
-        throw new Error("No wallets connected");
-      }
-      
-      const walletId = user.wallets[0].id;
-      
-      // Import the NFT to our database
-      const importResponse = await api.nft.importNFT({
-        wallet_id: walletId,
-        inscription_id: nft.inscription_id,
-        title: nft.title || `Inscription #${nft.inscription_number}`,
-        description: nft.description || `Bitcoin Ordinal Inscription #${nft.inscription_number}`,
-        collection: "Bitcoin Ordinals"
-      });
-      
-      if (!importResponse.success) {
-        throw new Error(importResponse.error || "Failed to import NFT");
-      }
-      
-      // Mark this NFT as imported
-      setWalletNfts(prev => 
-        prev.map(item => 
-          item.inscription_id === nft.inscription_id 
-            ? { ...item, imported: true, id: importResponse.success ? importResponse.data.id : item.id } 
-            : item
-        )
-      );
-      
-      // Update the selected NFT if it's the one we just imported
-      if (selectedNft && selectedNft.inscription_id === nft.inscription_id) {
-        setSelectedNft({
-          ...selectedNft,
-          imported: true,
-          id: importResponse.success ? importResponse.data.id : selectedNft.id
-        });
-      }
-      
-      toast({
-        title: "NFT Imported",
-        description: "Successfully imported NFT to your collection"
-      });
-      
-      return importResponse.success ? importResponse.data : null;
-    } catch (error) {
-      console.error("Error importing NFT:", error);
-      toast({
-        title: "Import Failed",
-        description: error instanceof Error ? error.message : "Failed to import NFT",
-        variant: "destructive"
-      });
-      return null;
-    } finally {
-      setIsImporting(false);
     }
   };
 
@@ -358,17 +246,21 @@ function CreateAuctionContent() {
       const auctionData: CreateAuctionRequest = {
         nft_id: selectedNft.id,
         start_price: parseFloat(startPrice),
-        reserve_price: reservePrice ? parseFloat(reservePrice) : undefined,
         start_time: startTime.toISOString(),
         end_time: endTime.toISOString(),
-        psbt
+        psbt: "" // Empty PSBT - backend will handle this
       };
 
+      console.log(auctionData); 
       const response = await api.auction.create(auctionData);
+      
+      if (response.success) {
+        toast({
+          title: "Success",
+          description: "Auction created successfully!"
+        });
+        router.push(`/auctions/${response.data.auction_id}`);
 
-      if (response.success && response.data) {
-        toast({ title: "Auction Created", description: "Success!" });
-        router.push(`/auctions/${response.data.id}`);
       } else {
         throw new Error("Auction creation failed");
       }
@@ -468,17 +360,6 @@ function CreateAuctionContent() {
                     onChange={(e) => setStartPrice(e.target.value)}
                     placeholder="Min. price"
                     required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="reservePrice">Reserve Price (sats, optional)</Label>
-                  <Input
-                    id="reservePrice"
-                    type="number"
-                    value={reservePrice}
-                    onChange={(e) => setReservePrice(e.target.value)}
-                    placeholder="Min. sale price"
                   />
                 </div>
               </div>
@@ -690,11 +571,6 @@ function CreateAuctionContent() {
                         <div className="absolute top-2 right-2 px-2 py-1 text-xs font-medium rounded-full bg-red-500/80">
                           {nft.network}
                         </div>
-                        {!nft.imported && (
-                          <div className="absolute top-2 left-2 px-2 py-1 text-xs font-medium rounded-full bg-yellow-500/80">
-                            Not imported
-                          </div>
-                        )}
                         <div className="absolute bottom-2 right-2">
                           <Button size="sm" variant="secondary" className="bg-black/70 hover:bg-black backdrop-blur-sm">
                             <Sparkles className="mr-1 h-3 w-3" /> Create Auction
