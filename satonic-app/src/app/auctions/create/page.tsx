@@ -193,7 +193,7 @@ function CreateAuctionContent() {
       const multisigRes = await fetch("http://localhost:8080/api/onchain/create-multisig", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seller_pubkey: sellerPubKey })
+        body: JSON.stringify({ seller_pubkey: sellerPubKey, auction_id: selectedNft.id })
       });
 
       if (!multisigRes.ok) throw new Error("Multisig creation failed");
@@ -230,8 +230,11 @@ function CreateAuctionContent() {
       const finalizeRes = await fetch("http://localhost:8080/api/onchain/finalize-escrow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signed_psbt: signedPsbtBase64 })
+        body: JSON.stringify({ signed_psbt: signedPsbtBase64, auction_id: selectedNft.id })
       });
+
+      console.log("Auction ID:", selectedNft.id);
+      console.log("Multisig address:", multisigAddress);
 
       if (!finalizeRes.ok) throw new Error("Broadcast failed");
       const { txid } = await finalizeRes.json();
