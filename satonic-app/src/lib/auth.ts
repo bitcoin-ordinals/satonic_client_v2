@@ -25,7 +25,6 @@ export function setAuth(authToken: AuthToken): void {
     localStorage.setItem(AUTH_TOKEN_KEY, authToken.token);
     localStorage.setItem('user', JSON.stringify(authToken.user));
     localStorage.setItem('expires_at', authToken.expires_at);
-    
     // Dispatch an event for components to listen to
     window.dispatchEvent(new Event('auth_changed'));
   } catch (error) {
