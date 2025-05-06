@@ -327,17 +327,22 @@ function CreateAuctionContent() {
         })
       });
 
-      if (!psbtRes.ok) throw new Error("Failed to create escrow PSBT");
-      const { psbt } = await psbtRes.json();
+      const rawPsbtRes = await psbtRes.json();
+      console.log("Raw PSBT response:", rawPsbtRes);
+      const { psbt } = rawPsbtRes;
 
       // STEP 4: Sign PSBT
-      const signedPsbt = await unisat.signPsbt(psbt);
+      const signedPsbtHex = await unisat.signPsbt(psbt);
+      const signedPsbtBuffer = Buffer.from(signedPsbtHex, 'hex');
+      const signedPsbtBase64 = signedPsbtBuffer.toString('base64');
+
+      console.log("Signed base64 PSBT:", signedPsbtBase64);
 
       // STEP 5: Finalize + broadcast
       const finalizeRes = await fetch("http://localhost:8080/api/onchain/finalize-escrow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signed_psbt: signedPsbt })
+        body: JSON.stringify({ signed_psbt: signedPsbtBase64 })
       });
 
       if (!finalizeRes.ok) throw new Error("Broadcast failed");

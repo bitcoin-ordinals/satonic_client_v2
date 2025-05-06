@@ -57,7 +57,7 @@ async function ensureWalletAuthenticated(): Promise<boolean> {
       // Verify we're on an appropriate network
       const network = await (window as any).unisat.getChain();
       console.log('Current wallet network(testing purposes):', network);
-      
+
     } catch (error) {
       console.error('Network verification failed:', error);
       // Don't block authentication - some wallets might work anyway
