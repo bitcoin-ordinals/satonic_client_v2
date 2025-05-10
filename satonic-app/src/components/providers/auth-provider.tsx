@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { api, getAuthToken, setAuthToken, removeAuthToken, User } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { toast } from 'react-hot-toast';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  currentNetwork: string;
+  setCurrentNetwork: (network: string) => void;
   login: (token: string, userData: User) => void;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -16,6 +19,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  currentNetwork: 'testnet4',
+  setCurrentNetwork: () => {},
   login: () => {},
   logout: () => {},
   refreshUser: async () => {},
@@ -27,6 +32,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [currentNetwork, setCurrentNetwork] = useState('testnet4');
   const router = useRouter();
 
   const login = (token: string, userData: User) => {
@@ -37,7 +43,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     removeAuthToken();
     setUser(null);
+    localStorage.removeItem('user');
+    localStorage.removeItem('wallet_address');
     router.push('/');
+    
+    // Dispatch event for components to react
+    window.dispatchEvent(new Event('auth_changed'));
   };
 
   const refreshUser = async () => {
@@ -50,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       // If it's a mock/local token, we don't need to fetch from backend
-      if (token.startsWith('mock_') || token.startsWith('wallet_')) {
+      if (token.startsWith('mock_')) {
         console.log('Skipping backend profile fetch for local authentication token');
         
         // Try to load user from localStorage
@@ -174,38 +185,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
   
-  // Login method for wallet authentication - local only, no backend calls
+  // Login method using backend API for wallet authentication
   const loginWithWallet = async (address: string, signature: string, message: string) => {
     try {
-      console.log('Local wallet login with address:', address);
+      console.log('Authenticating wallet with backend:', address);
       
-      // Store the address for future use
-      localStorage.setItem('wallet_address', address);
+      const response = await api.auth.walletLogin(address, signature, message);
       
-      // Create a mock token - in a real app you'd get this from the server
-      const token = `wallet_${address}_${Date.now()}`;
-      setAuthToken(token);
-      
-      // Create a minimal user object
-      const minimalUser = {
-        id: address,
-        wallets: [{
-          id: '1', 
-          user_id: '1', 
-          address: address,
-          type: 'bitcoin',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }]
-      };
-      
-      // Store the user data
-      localStorage.setItem('user', JSON.stringify(minimalUser));
-      setUser(minimalUser as User);
-      
-      return true;
+      if (response.success && response.data) {
+        // Debug log the token data structure
+        console.log('Auth response data structure:', {
+          hasToken: !!response.data.token,
+          tokenLength: response.data.token?.length || 0,
+          tokenPrefix: response.data.token?.substring(0, 10) || 'none',
+          hasUser: !!response.data.user,
+          hasExpiresAt: !!response.data.expires_at
+        });
+        
+        // Check if token is actually present and not empty
+        if (!response.data.token || response.data.token.trim() === '') {
+          console.error('Empty token received from backend');
+          toast.error('Authentication failed: Server returned an empty token');
+          return false;
+        }
+        
+        // Store the token from the backend
+        setAuthToken(response.data.token);
+        
+        // Update user data
+        setUser(response.data.user);
+        
+        // Store user data for later use
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        localStorage.setItem('wallet_address', address);
+        
+        // Dispatch auth event
+        window.dispatchEvent(new Event('auth_changed'));
+        
+        return true;
+      } else {
+        console.error('Backend authentication failed:', !response.success ? response.error : 'Unknown error');
+        toast.error('Authentication failed: ' + (!response.success ? response.error : 'Unknown error'));
+        return false;
+      }
     } catch (error) {
       console.error('Wallet login error:', error);
+      toast.error('Authentication error: ' + (error instanceof Error ? error.message : 'Unknown error'));
       return false;
     }
   };
@@ -220,7 +245,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Auth Provider init - token:', token ? token.substring(0, 10) + '...' : 'none');
       
       // If we have a mock token, don't try to refresh from backend
-      if (token && (token.startsWith('mock_') || token.startsWith('wallet_'))) {
+      if (token && token.startsWith('mock_')) {
         console.log('Using local authentication, skipping backend profile fetch');
         // Just use the cached user data
         try {
@@ -268,6 +293,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAuthenticated: !!user,
         isLoading,
+        currentNetwork,
+        setCurrentNetwork,
         login,
         logout,
         refreshUser,

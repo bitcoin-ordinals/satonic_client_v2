@@ -22,6 +22,7 @@ interface NFT {
   content_type?: string;
   inscription_url?: string;
   content?: string;
+  wallet_address?: string;
 }
 
 // Define the UniSat response interface
@@ -46,8 +47,8 @@ export default function ProfilePage() {
   const [currentNetwork, setCurrentNetwork] = useState<BitcoinNetwork>('testnet')
   const [isNetworkSwitching, setIsNetworkSwitching] = useState(false)
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false)
-  const [inscriptions, setInscriptions] = useState<NFT[]>([])
-  const [loadingInscriptions, setLoadingInscriptions] = useState(false)
+  const [walletNfts, setWalletNfts] = useState<NFT[]>([])
+  const [loadingNfts, setLoadingNfts] = useState(false)
   const [loadingBalances, setLoadingBalances] = useState(false)
 
   
@@ -73,7 +74,7 @@ export default function ProfilePage() {
   }, [user?.wallets])
 
   useEffect(() => {
-    fetchInscriptions()
+    fetchWalletNfts()
   }, [user?.wallets])  
 
   // Detect installed wallets
@@ -156,40 +157,65 @@ export default function ProfilePage() {
     }
   }
 
-  const fetchInscriptions = async () => {
-    if (!user?.wallets?.[0]?.address) return
-  
-    setLoadingInscriptions(true)
-    try {
-      const res = await api.nft.getNFTs(user.wallets[0].address)
-      
-      if (res.success && 'data' in res && res.data) {
-        // Check if data is directly an array of NFTs
-        if (Array.isArray(res.data)) {
-          console.log('Setting inscriptions from direct array data')
-          setInscriptions(res.data as NFT[])
-        } 
-        // Check for the previous format with nfts property
-        else if (res.data.nfts && Array.isArray(res.data.nfts)) {
-          console.log('Setting inscriptions from data.nfts property')
-          setInscriptions(res.data.nfts as NFT[])
-        }
-        else {
-          console.error('NFT data is in unexpected format:', res)
-          setInscriptions([])
-        }
-      } else {
-        // If data is not available, set to empty array
-        console.error('NFT data is not in expected format:', res)
-        setInscriptions([])
-      }
-    } catch (err) {
-      console.error('Failed to fetch inscriptions', err)
-      setInscriptions([]) // Ensure inscriptions is set to empty array on error
-    } finally {
-      setLoadingInscriptions(false)
+  const fetchWalletNfts = async () => {
+    if (!user?.wallets || user.wallets.length === 0) {
+      return;
     }
-  }
+
+    try {
+      setLoadingNfts(true);
+      
+      // Create an array to store all NFTs
+      let allNfts: NFT[] = [];
+      
+      // Fetch NFTs from each wallet
+      for (const wallet of user.wallets) {
+        const walletAddress = wallet.address;
+        
+        if (!walletAddress) continue;
+        
+        const res = await api.nft.getNFTs(walletAddress);
+        
+        if (res.success && 'data' in res && res.data) {
+          let walletNfts: NFT[] = [];
+          
+          // Check if data is directly an array of NFTs
+          if (Array.isArray(res.data)) {
+            console.log(`Found ${res.data.length} NFTs in wallet ${walletAddress}`);
+            walletNfts = res.data;
+          } 
+          // Check for the nested format with nfts property
+          else if (res.data.nfts && Array.isArray(res.data.nfts)) {
+            console.log(`Found ${res.data.nfts.length} NFTs in wallet ${walletAddress}`);
+            walletNfts = res.data.nfts;
+          }
+          
+          // Add wallet address to each NFT
+          walletNfts = walletNfts.map(nft => ({
+            ...nft,
+            wallet_address: walletAddress
+          }));
+          
+          // Add to all NFTs collection
+          allNfts = [...allNfts, ...walletNfts];
+        }
+      }
+      
+      console.log(`Total NFTs from all wallets: ${allNfts.length}`);
+      setWalletNfts(allNfts);
+
+    } catch (error) {
+      console.error("Error fetching NFTs:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load your NFTs. Please try again.",
+        variant: "destructive"
+      });
+      setWalletNfts([]);
+    } finally {
+      setLoadingNfts(false);
+    }
+  };
 
   const handleNetworkChange = async (network: BitcoinNetwork) => {
     try {
@@ -233,7 +259,7 @@ export default function ProfilePage() {
             console.log("Refreshing wallet balances after network switch")
             fetchWalletBalances(user.wallets)
             // Also refresh inscriptions after network switch
-            fetchInscriptions()
+            fetchWalletNfts()
           } else {
             console.log("No wallets found to refresh after network switch")
           }
@@ -309,13 +335,13 @@ export default function ProfilePage() {
                 <CardDescription>These NFTs are fetched from your wallet on UniSat</CardDescription>
               </CardHeader>
               <CardContent>
-                {loadingInscriptions ? (
+                {loadingNfts ? (
                   <p>Loading inscriptions...</p>
-                ) : !inscriptions || inscriptions.length === 0 ? (
+                ) : !walletNfts || walletNfts.length === 0 ? (
                   <p>No inscriptions found.</p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    {inscriptions.map((nft) => (
+                    {walletNfts.map((nft) => (
                       <div
                         key={nft.inscription_id}
                         className="border rounded-xl p-3 bg-black/80 hover:shadow-lg transition duration-200"

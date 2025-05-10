@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { unisatService } from '@/services/unisat';
+import { unisatService, BitcoinNetwork } from '@/services/unisat';
 import { useAuth } from '@/components/providers/auth-provider';
 import { isAuthenticated } from '@/lib/api';
 import { toast } from 'react-hot-toast';
@@ -9,7 +9,7 @@ export function useUnisat() {
   const [isConnected, setIsConnected] = useState(false);
   const [address, setAddress] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, currentNetwork, setCurrentNetwork } = useAuth();
 
   // Reset state when authentication changes
   useEffect(() => {
@@ -48,7 +48,20 @@ export function useUnisat() {
       // Not authenticated, check wallet connection status
       checkConnection();
     }
+
+    // Also initialize the network
+    initializeNetwork();
   }, [user]);
+
+  // Initialize network from stored preference or wallet
+  const initializeNetwork = useCallback(async () => {
+    try {
+      const network = await unisatService.getCurrentNetwork();
+      setCurrentNetwork(network);
+    } catch (error) {
+      console.error('Failed to initialize network:', error);
+    }
+  }, [setCurrentNetwork]);
 
   // Function to check wallet connection without prompting for signature
   const checkConnection = useCallback(async () => {
@@ -69,6 +82,23 @@ export function useUnisat() {
     }
   }, []);
 
+  // Function to switch network
+  const switchNetwork = useCallback(async (network: BitcoinNetwork) => {
+    try {
+      const success = await unisatService.switchNetwork(network);
+      if (success) {
+        setCurrentNetwork(network);
+        toast.success(`Switched to ${network}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to switch network:', error);
+      toast.error('Failed to switch network');
+      return false;
+    }
+  }, [setCurrentNetwork]);
+
   // Function to connect wallet with signature
   const connect = useCallback(async () => {
     setIsConnecting(true);
@@ -81,11 +111,12 @@ export function useUnisat() {
         return isConnected;
       }
 
-      await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
+      // Ensure we're on the correct network
+      await unisatService.switchNetwork(currentNetwork);
 
       // Not authenticated, need to connect and authenticate
       console.log('Not authenticated, connecting wallet and getting signature');
-      const success = await unisatService.connect();
+      const success = await unisatService.connect(currentNetwork);
       
       if (success) {
         setIsConnected(true);
@@ -107,13 +138,15 @@ export function useUnisat() {
     } finally {
       setIsConnecting(false);
     }
-  }, [refreshUser, checkConnection]);
+  }, [refreshUser, checkConnection, currentNetwork]);
 
   return {
     isConnected,
     address,
     isConnecting,
     connect,
-    checkConnection
+    checkConnection,
+    switchNetwork,
+    currentNetwork
   };
 } 

@@ -6,49 +6,17 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/components/providers/auth-provider';
 import { api } from '@/lib/api';
-import type { NFT, CreateAuctionRequest } from '@/lib/api';
-import { Loader2, Copy, ChevronRight, Plus, Sparkles, Upload, Calendar, Clock } from 'lucide-react';
+import { Loader2, Copy, ChevronRight,  Sparkles, Calendar,} from 'lucide-react';
 import { useUnisat } from '@/hooks/useUnisat';
-import { format } from 'date-fns';
+import { format, set } from 'date-fns';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-
-// Type declaration for Unisat wallet API
-interface UnisatWallet {
-  requestAccounts: () => Promise<string[]>;
-  getAccounts: () => Promise<string[]>;
-  getNetwork: () => Promise<string>;
-  getInscriptions: (cursor: number, size: number) => Promise<{
-    total: number;
-    inscriptions: Array<{
-      inscriptionId: string;
-      inscriptionNumber: number;
-      content?: string;
-      preview?: string;
-      contentType?: string;
-    }>
-  }>;
-}
-
-
-type WalletNFT = {
-  id: string;
-  inscription_id: string;
-  inscription_number: number;
-  image_url?: string;
-  content_url?: string;
-  title?: string;
-  description?: string;
-  wallet_address: string;
-  network: string;
-};
+import type { NFT, CreateAuctionRequest } from '@/lib/api';
 
 function CreateAuctionContent() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
@@ -56,8 +24,8 @@ function CreateAuctionContent() {
   const { toast } = useToast();
   const { connect } = useUnisat();
 
-  const [walletNfts, setWalletNfts] = useState<WalletNFT[]>([]);
-  const [selectedNft, setSelectedNft] = useState<WalletNFT | null>(null);
+  const [walletNfts, setWalletNfts] = useState<NFT[]>([]);
+  const [selectedNft, setSelectedNft] = useState<NFT | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAuctionForm, setShowAuctionForm] = useState(false);
@@ -95,56 +63,42 @@ function CreateAuctionContent() {
 
     try {
       setIsLoading(true);
-      const walletAddress = user.wallets[0]?.address;
       
-      if (!walletAddress) {
-        throw new Error("No wallet address available");
+      // Create an array to store all NFTs
+      let allNfts: NFT[] = [];
+      
+      // Fetch NFTs from each wallet
+      for (const wallet of user.wallets) {
+        const walletAddress = wallet.address;
+        
+        if (!walletAddress) continue;
+        
+        const res = await api.nft.getNFTs(walletAddress);
+        
+        if (res.success && 'data' in res && res.data) {
+          // Process NFTs and add wallet information
+          if (Array.isArray(res.data)) {
+            const walletNfts = res.data.map((nft: any) => ({
+              ...nft,
+              metadata: nft.metadata || {},
+              wallet_address: walletAddress // Store the wallet address with each NFT
+            }));
+            allNfts = [...allNfts, ...walletNfts];
+          } 
+          else if (res.data.nfts && Array.isArray(res.data.nfts)) {
+            const walletNfts = res.data.nfts.map((nft: NFT) => ({
+              ...nft,
+              metadata: nft.metadata || {},
+              wallet_address: walletAddress // Store the wallet address with each NFT
+            }));
+            allNfts = [...allNfts, ...walletNfts];
+          }
+        }
       }
       
-      const res = await api.nft.getNFTs(walletAddress);
-      
-      if (res.success && 'data' in res && res.data) {
-        // Check if data is directly an array of NFTs
-        if (Array.isArray(res.data)) {
-          console.log('Setting NFTs from direct array data');
-          const walletNfts = res.data.map((nft: any) => ({
-            id: nft.inscription_id || nft.id,
-            inscription_id: nft.inscription_id || nft.id,
-            inscription_number: nft.inscription_number || 0,
-            image_url: nft.image_url || nft.inscription_url,
-            content_url: nft.content_url || nft.inscription_url,
-            title: nft.title || `Inscription #${nft.inscription_number || nft.inscription_id?.slice(0, 8) || ''}`,
-            description: nft.description || `Bitcoin ordinal inscription`,
-            wallet_address: walletAddress,
-            network: nft.network || 'unknown'
-          }));
-          setWalletNfts(walletNfts);
-        } 
-        // Check for the nested format with nfts property
-        else if (res.data.nfts && Array.isArray(res.data.nfts)) {
-          console.log('Setting NFTs from data.nfts property');
-          const walletNfts = res.data.nfts.map((nft: any) => ({
-            id: nft.inscription_id || nft.id,
-            inscription_id: nft.inscription_id || nft.id,
-            inscription_number: nft.inscription_number || 0,
-            image_url: nft.image_url || nft.inscription_url,
-            content_url: nft.content_url || nft.inscription_url,
-            title: nft.title || `Inscription #${nft.inscription_number || nft.inscription_id?.slice(0, 8) || ''}`,
-            description: nft.description || `Bitcoin ordinal inscription`,
-            wallet_address: walletAddress,
-            network: nft.network || 'unknown'
-          }));
-          setWalletNfts(walletNfts);
-        }
-        else {
-          console.error('NFT data is in unexpected format:', res);
-          setWalletNfts([]);
-        }
-      } else {
-        // If data is not available, set to empty array
-        console.error('NFT data is not in expected format:', res);
-        setWalletNfts([]);
-      }
+      // Set all NFTs from all wallets
+      setWalletNfts(allNfts);
+
     } catch (error) {
       console.error("Error fetching NFTs:", error);
       toast({
@@ -158,7 +112,7 @@ function CreateAuctionContent() {
     }
   };
 
-  const handleSelectNft = async (nft: WalletNFT) => {
+  const handleSelectNft = async (nft: NFT) => {
     setSelectedNft(nft);
     
     // Pre-fill title and description
@@ -168,7 +122,7 @@ function CreateAuctionContent() {
   };
 
   const handleBackToGallery = () => {
-      setSelectedNft(null);
+    setSelectedNft(null);
     setShowAuctionForm(false);
   };
 
@@ -185,39 +139,65 @@ function CreateAuctionContent() {
     try {
       setIsSubmitting(true);
       const unisat = window.unisat as any;
+      
+      // Use the wallet address stored with the NFT
+      const walletAddress = selectedNft.wallet_id;
+      
+      // Connect to this specific wallet if needed
+      await unisat.requestAccounts();
+      const connectedAddress = await unisat.getAccounts();
+      
+      if (connectedAddress[0] !== walletAddress) {
+        toast({
+          title: "Wrong wallet",
+          description: `Please connect to the wallet that owns this NFT: ${walletAddress}`,
+          variant: "destructive"
+        });
+        setIsSubmitting(false);
+        return;
+      }
 
       // STEP 1: Get seller pubkey
       const sellerPubKey = await unisat.getPublicKey();
+      console.log("Seller pubkey:", sellerPubKey);
 
-      // STEP 2: Create multisig address (backend combines sellerPubKey with PLATFORM_TAPROOT_PUBKEY)
-      const multisigRes = await fetch("http://localhost:8080/api/onchain/create-multisig", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seller_pubkey: sellerPubKey, auction_id: selectedNft.id })
-      });
+      let startTime = startType === "scheduled" ? startDate : new Date();
+      let endTime = durationType === "quick"
+          ? new Date(startTime.getTime() + parseInt(duration) * 60 * 1000)
+          : endDate;
+      
+      const auctionData: CreateAuctionRequest = {
+        nft_id: selectedNft.id,
+        seller_pubkey: sellerPubKey,
+        start_price: parseFloat(startPrice),
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        psbt: "" // Empty PSBT - backend will handle this
+      };
 
-      if (!multisigRes.ok) throw new Error("Multisig creation failed");
-      const { descriptor, address: multisigAddressRaw  } = await multisigRes.json();
+      console.log(auctionData); 
+      const auctionResponse = await api.auction.create(auctionData);
+
+      // STEP 2: Create multisig address
+      const multisigResponse = await api.onchain.createMultisig();
+      if (!multisigResponse.success) throw new Error("Multisig creation failed");
+      const { descriptor, address: multisigAddressRaw } = multisigResponse.data;
       const multisigAddress = multisigAddressRaw.replace(/"/g, "").trim();
 
       console.log("Generated multisig address:", multisigAddress);
 
-      // STEP 3: Prepare escrow PSBT (lock NFT to multisig)
-      const psbtRes = await fetch("http://localhost:8080/api/onchain/create-escrow", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inscription_utxo: selectedNft.inscription_id.split("i")[0],
-          vout: parseInt(selectedNft.inscription_id.split("i")[1]),
-          multisig_address: multisigAddress,
-          multisig_script: descriptor,
-          amount: (parseInt(startPrice) / 100_000_000).toFixed(8)
-        })
-      });
-
-      const rawPsbtRes = await psbtRes.json();
-      console.log("Raw PSBT response:", rawPsbtRes);
-      const { psbt } = rawPsbtRes;
+      // STEP 3: Prepare escrow PSBT
+      const escrowData = {
+        inscription_utxo: selectedNft.inscription_id.split("i")[0],
+        vout: parseInt(selectedNft.inscription_id.split("i")[1]),
+        multisig_address: multisigAddress,
+        multisig_script: descriptor,
+        amount: (parseInt(startPrice) / 100_000_000).toFixed(8)
+      };
+      
+      const psbtResponse = await api.onchain.createEscrow(escrowData);
+      if (!psbtResponse.success) throw new Error("PSBT creation failed");
+      const psbt = psbtResponse.data;
 
       // STEP 4: Sign PSBT
       const signedPsbtHex = await unisat.signPsbt(psbt);
@@ -227,43 +207,26 @@ function CreateAuctionContent() {
       console.log("Signed base64 PSBT:", signedPsbtBase64);
 
       // STEP 5: Finalize + broadcast
-      const finalizeRes = await fetch("http://localhost:8080/api/onchain/finalize-escrow", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signed_psbt: signedPsbtBase64, auction_id: selectedNft.id })
-      });
-
-      console.log("Auction ID:", selectedNft.id);
-      console.log("Multisig address:", multisigAddress);
-
-      if (!finalizeRes.ok) throw new Error("Broadcast failed");
-      const { txid } = await finalizeRes.json();
-
-      // STEP 6: Calculate start/end time
-      let startTime = startType === "scheduled" ? startDate : new Date();
-      let endTime = durationType === "quick"
-          ? new Date(startTime.getTime() + parseInt(duration) * 60 * 1000)
-          : endDate;
-
-      // STEP 7: Call auction creation endpoint
-      const auctionData: CreateAuctionRequest = {
-        nft_id: selectedNft.id,
-        start_price: parseFloat(startPrice),
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        psbt: "" // Empty PSBT - backend will handle this
-      };
-
-      console.log(auctionData); 
-      const response = await api.auction.create(auctionData);
+      const finalizeResponse = await api.onchain.finalizeEscrow({ signed_psbt: signedPsbtBase64 });
+      if (!finalizeResponse.success) throw new Error("Broadcast failed");
+      const txid = finalizeResponse.data;
+      console.log("Finalized + broadcasted txid:", txid);
       
-      if (response.success) {
+      if (auctionResponse.success && auctionResponse.data) {
+        const auctionId = auctionResponse.data.auction_id;
+        console.log("Created auction with ID:", auctionId);
+        
         toast({
           title: "Success",
           description: "Auction created successfully!"
         });
-        router.push(`/auctions/${response.data.auction_id}`);
-
+        
+        if (auctionId) {
+          router.push(`/auctions/${auctionId}`);
+        } else {
+          console.error("No auction_id in response:", auctionResponse);
+          throw new Error("Missing auction_id in response");
+        }
       } else {
         throw new Error("Auction creation failed");
       }
@@ -572,7 +535,7 @@ function CreateAuctionContent() {
                           </div>
                         )}
                         <div className="absolute top-2 right-2 px-2 py-1 text-xs font-medium rounded-full bg-red-500/80">
-                          {nft.network}
+                          {nft.auction_id}
                         </div>
                         <div className="absolute bottom-2 right-2">
                           <Button size="sm" variant="secondary" className="bg-black/70 hover:bg-black backdrop-blur-sm">
@@ -582,7 +545,7 @@ function CreateAuctionContent() {
                       </div>
 
                       <div className="mt-3 space-y-1">
-                        <h3 className="text-lg font-bold text-red-400">{nft.title || `Inscription #${nft.inscription_number}`}</h3>
+                        <h3 className="text-lg font-bold text-red-400">{nft.title || `Inscription #${nft.id}`}</h3>
                         <div className="flex items-center gap-1 text-sm font-mono text-muted-foreground">
                           <span>ID: {nft.inscription_id.slice(0, 8)}...</span>
                           <button

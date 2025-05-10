@@ -1,27 +1,50 @@
-import { useState } from 'react';
-import { useWallet } from '@/hooks/useWallet';
+import { useState, useEffect } from 'react';
+import { useWalletContext } from '@/components/providers/wallet-provider';
+import { unisatService, UnisatInscription } from '@/services/unisat';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/components/providers/auth-provider';
 
 export function InscriptionList() {
-  const { inscriptions, totalInscriptions, fetchInscriptions, isConnected } = useWallet();
+  const { isConnected, address, currentNetwork } = useWalletContext();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [inscriptions, setInscriptions] = useState<UnisatInscription[]>([]);
+  const [totalInscriptions, setTotalInscriptions] = useState(0);
   const [cursor, setCursor] = useState(0);
   const pageSize = 20;
 
-  const loadMore = async () => {
-    if (loading || !isConnected) return;
+  useEffect(() => {
+    if (isConnected && address) {
+      fetchInscriptions();
+    }
+  }, [isConnected, address, currentNetwork]);
+
+  const fetchInscriptions = async (newCursor = 0, size = pageSize) => {
+    if (!address || loading) return;
     
     setLoading(true);
     try {
-      await fetchInscriptions(inscriptions[0]?.address || '', cursor + pageSize, pageSize);
-      setCursor(cursor + pageSize);
+      const result = await unisatService.getAddressInscriptions(address, newCursor, size);
+      
+      if (newCursor === 0) {
+        setInscriptions(result.inscriptions);
+      } else {
+        setInscriptions(prev => [...prev, ...result.inscriptions]);
+      }
+      
+      setTotalInscriptions(result.total);
+      setCursor(newCursor);
     } catch (error) {
-      console.error('Error loading more inscriptions:', error);
+      console.error('Error fetching inscriptions:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadMore = async () => {
+    await fetchInscriptions(cursor + pageSize);
   };
 
   if (!isConnected) {

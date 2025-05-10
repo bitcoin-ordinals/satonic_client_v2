@@ -1,4 +1,4 @@
-import { api, isAuthenticated, setAuthToken, ApiSuccess } from '@/lib/api';
+import { api, isAuthenticated, setAuthToken, ApiSuccess, getAuthToken } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 
 // Add a lock to prevent multiple simultaneous authentication attempts
@@ -6,70 +6,62 @@ let authInProgress = false;
 let lastAuthAttempt = 0;
 const AUTH_COOLDOWN_MS = 2000; // 2 second cooldown between auth attempts
 
+// Define network types
+export type BitcoinNetwork = 'mainnet' | 'testnet4' | 'testnet';
+
+// Map internal network types to Unisat network types
+const NETWORK_MAPPING = {
+  'mainnet': 'livenet',
+  'testnet4': 'testnet', 
+  'testnet': 'testnet'
+};
+
 // Helper function to check if wallet is connected and authenticate if needed
-async function ensureWalletAuthenticated(): Promise<boolean> {
-  // If already authenticated with backend, we're good - return true immediately
-  if (isAuthenticated()) {
-    console.log('Already authenticated, returning true');
-    return true;
-  }
-  
-  // If authentication is already in progress, don't start another attempt
+async function ensureWalletAuthenticated(network: BitcoinNetwork = 'testnet4'): Promise<boolean> {
+  // If authentication is already in progress, return false
   if (authInProgress) {
-    console.log("Authentication already in progress, skipping this request");
+    console.log('Authentication already in progress, skipping');
     return false;
   }
   
-  // Implement cooldown to prevent rapid repeated auth attempts
-  const now = Date.now();
-  if (now - lastAuthAttempt < AUTH_COOLDOWN_MS) {
-    console.log("Auth attempt too soon after previous attempt, skipping");
-    return false;
-  }
+  // Set the lock
+  authInProgress = true;
   
   try {
-    // Set the lock before starting authentication
-    authInProgress = true;
-    lastAuthAttempt = now;
+    // If already authenticated with backend, we're good - return true immediately
+    if (getAuthToken()) {
+      console.log('Already authenticated, skipping wallet check');
+      return true;
+    }
     
-    // Check if wallet is installed
+    console.log('Starting authentication process');
+    
+    // Check if Unisat is available
     if (typeof window === 'undefined' || !(window as any).unisat) {
-      toast.error('Unisat wallet not installed');
+      console.error('Unisat wallet not detected');
+      toast.error('Unisat wallet extension not detected. Please install it first.');
       return false;
     }
-
-    // Request wallet to switch to testnet
+    
     try {
-      // First try the standard testnet option which most wallets support
-      try {
-        await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
-      } catch (error) {
-        console.log('Failed to switch to standard testnet, trying testnet4:', error);
-        // If standard testnet fails, try testnet4 as a fallback
-        // but don't throw an error if this also fails, as we'll handle it below
-        try {
-          await window.unisat?.switchChain?.('BITCOIN_TESTNET4');
-        } catch (secondError) {
-          console.warn('Failed to switch to testnet4 as well:', secondError);
-          // Continue anyway, as the wallet might already be on testnet
-        }
-      }
-
-      // Verify we're on an appropriate network
-      const network = await (window as any).unisat.getChain();
-      console.log('Current wallet network(testing purposes):', network);
-
-    } catch (error) {
-      console.warn('Failed to switch to testnet:', error);
-      // Continue anyway, as the wallet might already be on testnet
+      // Switch to the correct network
+      const unisatNetwork = NETWORK_MAPPING[network] || 'testnet';
+      await (window as any).unisat.switchNetwork(unisatNetwork);
+      console.log(`Switched to network: ${unisatNetwork}`);
+    } catch (networkError) {
+      console.error('Failed to switch network:', networkError);
+      toast.error('Failed to switch network. Please try again.');
+      return false;
     }
     
-    // Get wallet address
-    let accounts = [];
+    // Get accounts/addresses
+    let accounts;
     try {
       accounts = await (window as any).unisat.getAccounts();
     } catch (error) {
       console.error('Failed to get accounts:', error);
+      toast.error('Failed to access wallet accounts');
+      return false;
     }
     
     if (!accounts || accounts.length === 0) {
@@ -382,10 +374,62 @@ class UnisatService {
     }
   }
   
+  // Switch network and ensure it's properly configured
+  async switchNetwork(network: BitcoinNetwork): Promise<boolean> {
+    if (typeof window === 'undefined' || !(window as any).unisat) {
+      toast.error('Unisat wallet not detected');
+      return false;
+    }
+
+    try {
+      const unisatNetwork = NETWORK_MAPPING[network] || 'testnet';
+      await (window as any).unisat.switchNetwork(unisatNetwork);
+      console.log(`Switched to network: ${unisatNetwork}`);
+      
+      // Verify the current network
+      const currentChain = await (window as any).unisat.getChain();
+      console.log(`Current wallet chain: ${JSON.stringify(currentChain)}`);
+      
+      // Store the current network in local storage
+      localStorage.setItem('current_network', network);
+      
+      return true;
+    } catch (error) {
+      console.error('Network switch error:', error);
+      toast.error('Failed to switch network');
+      return false;
+    }
+  }
+
+  // Get the current network
+  async getCurrentNetwork(): Promise<BitcoinNetwork> {
+    try {
+      // First check localStorage for user preference
+      const storedNetwork = localStorage.getItem('current_network') as BitcoinNetwork;
+      if (storedNetwork) {
+        return storedNetwork;
+      }
+      
+      // Otherwise check the wallet's current network
+      if (typeof window !== 'undefined' && (window as any).unisat) {
+        const chain = await (window as any).unisat.getChain();
+        if (chain && chain.enum === 'Mainnet') {
+          return 'mainnet';
+        }
+      }
+      
+      // Default to testnet4
+      return 'testnet4';
+    } catch (error) {
+      console.error('Error getting current network:', error);
+      return 'testnet4'; // Default
+    }
+  }
+
   // Add a method to authenticate with the wallet explicitly
-  async connect(): Promise<boolean> {
+  async connect(network: BitcoinNetwork = 'testnet4'): Promise<boolean> {
     // This will be called explicitly when a user wants to connect their wallet
-    return await ensureWalletAuthenticated();
+    return await ensureWalletAuthenticated(network);
   }
   
   // Check if wallet is connected without authentication

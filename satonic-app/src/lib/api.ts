@@ -8,6 +8,7 @@ export const AUTH_TOKEN_KEY = 'satonic_auth_token';
 export interface ApiError {
   success: false;
   error: string;
+  status?: number;
 }
 
 export interface ApiSuccess<T> {
@@ -20,15 +21,105 @@ export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 // Authentication helpers
 export const getAuthToken = (): string | null => {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(AUTH_TOKEN_KEY);
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    
+    // Check if token exists and is not just whitespace
+    if (!token || !token.trim()) {
+      return null;
+    }
+    
+    // Return the cleaned token (no extra whitespace)
+    return token.trim();
+  } catch (err) {
+    console.error('Error retrieving auth token:', err);
+    return null;
+  }
 };
 
 export const setAuthToken = (token: string): void => {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  try {
+    if (!token) {
+      console.warn('Attempted to set empty auth token');
+      return;
+    }
+    
+    // Store the trimmed token
+    localStorage.setItem(AUTH_TOKEN_KEY, token.trim());
+    console.log('Auth token stored successfully');
+  } catch (err) {
+    console.error('Error storing auth token:', err);
+  }
 };
 
 export const removeAuthToken = (): void => {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    console.log('Auth token removed');
+  } catch (err) {
+    console.error('Error removing auth token:', err);
+  }
+};
+
+// Debugging helper for token issues
+export const debugAuthToken = (): void => {
+  if (typeof window === 'undefined') {
+    console.log('Running on server, no token available');
+    return;
+  }
+  
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    
+    if (!token) {
+      console.log('No token found in localStorage');
+      return;
+    }
+    
+    console.log('Token exists in localStorage');
+    console.log('Token length:', token.length);
+    console.log('First 5 chars:', token.substring(0, 5));
+    console.log('Last 5 chars:', token.substring(token.length - 5));
+    console.log('Contains whitespace at start/end:', token !== token.trim());
+    
+    // Check if token appears to be JWT format (xxx.yyy.zzz)
+    const jwtPattern = /^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]*$/;
+    console.log('Matches JWT format:', jwtPattern.test(token.trim()));
+  } catch (err) {
+    console.error('Error debugging auth token:', err);
+  }
+};
+
+// Reset all auth state - useful for troubleshooting
+export const resetAuthState = (): void => {
+  if (typeof window === 'undefined') return;
+  
+  try {
+    // Remove auth token
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    
+    // Clear any other auth-related items in localStorage
+    const authKeys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.toLowerCase().includes('auth') || 
+                  key.toLowerCase().includes('token') || 
+                  key.toLowerCase().includes('user'))) {
+        authKeys.push(key);
+      }
+    }
+    
+    console.log('Clearing authentication state...');
+    authKeys.forEach(key => {
+      console.log(`- Removing localStorage item: ${key}`);
+      localStorage.removeItem(key);
+    });
+    
+    console.log('Auth state reset completed');
+    console.log('Please refresh the page to complete the reset process');
+  } catch (err) {
+    console.error('Error resetting auth state:', err);
+  }
 };
 
 export const isAuthenticated = (): boolean => {
@@ -95,6 +186,8 @@ export interface NFT {
   created_at: string;
   updated_at: string;
   auction_id?: string;
+  wallet_address?: string;
+  network?: string;
 }
 
 export interface Auction {
@@ -133,7 +226,8 @@ export interface BidRequest {
 
 export interface CreateAuctionRequest {
   nft_id: string;
-  seller_address?: string; 
+  seller_address?: string;
+  seller_pubkey?: string;
   title?: string;
   description?: string;
   start_price: number;
@@ -149,6 +243,30 @@ export interface ImportNFTRequest {
   title?: string;
   description?: string;
   metadata?: any;
+}
+
+export interface MultisigResponse {
+  descriptor: string;
+  address: string;
+}
+
+export interface CreateEscrowRequest {
+  inscription_utxo: string;
+  vout: number;
+  multisig_address: string;
+  multisig_script: string;
+}
+
+export interface FinalizeEscrowRequest {
+  signed_psbt: string;
+}
+
+export interface CreateEscrowResponse {
+  psbt: string;
+}
+
+export interface FinalizeEscrowResponse {
+  txid: string;
 }
 
 export interface WalletBalanceResponse {
@@ -182,12 +300,17 @@ const apiRequest = async <T>(
     };
     
     if (token) {
-      customHeaders['Authorization'] = `Bearer ${token}`;
+      // Don't log the actual token for security reasons
+      console.log(`Using authentication token for request to: ${endpoint}`);
+      
+      // Ensure token is properly formatted without extra spaces or newlines
+      const cleanToken = token.trim();
+      customHeaders['Authorization'] = `Bearer ${cleanToken}`;
     } else {
-      console.log(`No auth token for request to ${endpoint}`);
+      console.log(`No auth token available for request to: ${endpoint}`);
     }
     
-    // Deep debug of request
+    // Prepare the final request options
     const requestOptions = {
       ...options,
       headers: {
@@ -196,6 +319,8 @@ const apiRequest = async <T>(
       }
     };
     
+    // Log request details (without sensitive info)
+    console.log(`Making API request to: ${endpoint}, method: ${options.method || 'GET'}`);
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
 
@@ -207,16 +332,27 @@ const apiRequest = async <T>(
       };
     }
     
-    // Handle unauthorized responses by clearing the token
+    // Check for authentication issues
     if (response.status === 401) {
-      console.error('Unauthorized request, clearing token');
-      removeAuthToken();
+      console.error('Authentication failed (401) for request to:', endpoint);
+      
+      // Only remove token if it's an actual authentication issue
+      // Check for a specific header or response body that indicates token expiration
+      const authProblem = response.headers.get('x-auth-failed') === 'true' || 
+                          response.headers.get('www-authenticate')?.includes('invalid_token');
+      
+      if (authProblem) {
+        console.warn('Auth token appears to be invalid, clearing token');
+        removeAuthToken();
+      }
+      
       return {
         success: false,
         error: 'Authentication required. Please sign in again.' 
       };
     }
     
+    // Parse the response
     let data;
     const contentType = response.headers.get('content-type');
     
@@ -224,23 +360,60 @@ const apiRequest = async <T>(
       // Only try to parse as JSON if the Content-Type is application/json
       if (contentType && contentType.includes('application/json')) {
         data = await response.json();
+        
+        // Log response data structure for debugging (without sensitive data)
+        console.log(`API response data structure from ${endpoint}:`, 
+          Object.keys(data).length > 0 
+            ? Object.keys(data) 
+            : 'Empty response');
       } else {
         const text = await response.text();
+        console.warn(`Server returned non-JSON response for ${endpoint}:`, 
+            text.length > 100 ? `${text.substring(0, 100)}...` : text);
         throw new Error(`Server returned non-JSON response: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
       }
     } catch (parseError) {
-      console.error('Error parsing response:', parseError);
+      console.error(`Error parsing response from ${endpoint}:`, parseError);
       // Try to get the raw text if JSON parsing failed
       const text = await response.text().catch(() => 'Could not read response text');
       throw new Error(`Failed to parse response: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
     }
 
-    console.log("response", data);
+    // Log response summary
+    console.log(`API response from ${endpoint}:`, 
+        response.ok ? 'Success' : `Error (${response.status})`);
     
-    // Otherwise, construct an ApiResponse based on HTTP status
+    // IMPORTANT: The API returns responses in the format { success: true, data: {...} }
+    // We need to extract the actual data from this response structure
+    
+    // Check if response already has a success field (backend format)
+    if (data && 'success' in data) {
+      // The backend is already returning our expected format
+      if (data.success && data.data) {
+        // Return in our expected format
+        return {
+          success: true,
+          data: data.data as T
+        };
+      } else {
+        // Error from backend
+        return {
+          success: false,
+          error: data.error || 'Unknown API error',
+          status: response.status
+        };
+      }
+    }
+    
+    // If we get here, the backend is not using our expected format
+    // Just return the data directly
     return response.ok 
       ? { success: true, data: data as T }
-      : { success: false, error: typeof data === 'string' ? data : JSON.stringify(data) };
+      : { 
+          success: false, 
+          error: data?.error || (typeof data === 'string' ? data : JSON.stringify(data)),
+          status: response.status
+        };
   } catch (error) {
     console.error(`Error in API request to ${endpoint}:`, error);
     return {
@@ -255,29 +428,24 @@ export const api = {
   // NFT Endpoints
   nft: {
     // Get all user NFTs
-    getUserNFTs: () => apiRequest<{
+    getUserNFTs: (network?: string) => apiRequest<{
       nfts: NFT[];
       total_count: number;
       page: number;
       page_size: number;
-    }>('/nfts'),
+    }>(`/nfts${network ? `?network=${network}` : ''}`),
     
     // Get NFTs by address
-    getNFTs: (address: string) => apiRequest<{
+    getNFTs: (address: string, network?: string) => apiRequest<{
       nfts: NFT[];
       total_count: number;
       page: number;
       page_size: number;
-    }>(`/nfts/address/?address=${address}`),
+    }>(`/nfts/address/?address=${address}${network ? `&network=${network}` : ''}`),
     
     // Get a specific NFT by ID
     getNFT: (id: string) => apiRequest<NFT>(`/nfts/${id}`),
 
-    // Import an NFT
-    importNFT: (data: ImportNFTRequest) => apiRequest<NFT>('/nfts/import', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
 
     // Validate an NFT before importing
     validateNFT: (data: ImportNFTRequest) => apiRequest<{
@@ -343,6 +511,26 @@ export const api = {
     }),
   },
   
+  //onchain endpoints
+  onchain: {
+
+    // Get user profile
+    createMultisig: () => apiRequest<MultisigResponse>('/onchain/create-multisig'),
+
+    // Update user profile
+    createEscrow: (data: CreateEscrowRequest) => apiRequest<CreateEscrowResponse>('/onchain/create-escrow', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+    // Get wallet balance
+    finalizeEscrow: (data: FinalizeEscrowRequest) => apiRequest<FinalizeEscrowResponse>('/onchain/finalize-escrow', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  },
+  
   // User Endpoints
   user: {
     // Get user profile
@@ -379,13 +567,42 @@ export const api = {
         });
       }
       
-      return apiRequest<{ token: string; expires_at: string; user: User }>('/auth/wallet-login', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          address, 
-          signature, 
-          message 
-        }),
+      return new Promise((resolve) => {
+        apiRequest<{ token: string; expires_at: string; user: User }>('/auth/wallet-login', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            address, 
+            signature, 
+            message 
+          }),
+        }).then(response => {
+          console.log('Raw wallet login response:', response);
+          
+          // Additional validation for response data
+          if (response.success && response.data) {
+            if (!response.data.token) {
+              console.error('API returned success but token is missing');
+              resolve({
+                success: false,
+                error: 'Server returned invalid token data'
+              });
+              return;
+            }
+            
+            console.log('Token received from server:', {
+              length: response.data.token.length,
+              preview: `${response.data.token.substring(0, 10)}...${response.data.token.substring(response.data.token.length - 10)}`
+            });
+          }
+          
+          resolve(response);
+        }).catch(error => {
+          console.error('Wallet login request failed:', error);
+          resolve({
+            success: false,
+            error: error.message || 'Network request failed'
+          });
+        });
       });
     },
     

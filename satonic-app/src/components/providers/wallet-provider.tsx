@@ -1,25 +1,23 @@
 'use client'
 
 import { createContext, useContext, ReactNode } from 'react'
-import { useWallet, WalletType } from '@/hooks/useWallet'
+import { useUnisat } from '@/hooks/useUnisat'
+import { BitcoinNetwork } from '@/services/unisat'
 
 interface WalletContextType {
   isConnected: boolean
   address: string | null
-  balance: number | null
-  walletType: WalletType
-  inscriptions: any[]
-  totalInscriptions: number
-  connectWallet: (walletType: WalletType) => Promise<void>
-  disconnectWallet: () => void
-  signMessage: (message: string) => Promise<string>
-  fetchInscriptions: (addr: string, cursor?: number, size?: number) => Promise<any>
+  isConnecting: boolean
+  currentNetwork: string
+  connect: () => Promise<boolean>
+  checkConnection: () => Promise<boolean>
+  switchNetwork: (network: BitcoinNetwork) => Promise<boolean>
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined)
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const wallet = useWallet()
+  const wallet = useUnisat()
 
   return (
     <WalletContext.Provider value={wallet}>

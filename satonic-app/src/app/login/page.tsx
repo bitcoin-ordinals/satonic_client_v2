@@ -2,21 +2,23 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { connectWallet, signMessage } from '@/lib/wallet';
-import { setAuth, isAuthenticated } from '@/lib/auth';
+import { unisatService } from '@/services/unisat';
+import { useAuth } from '@/components/providers/auth-provider';
 import api from '@/lib/api';
+import { toast } from 'react-hot-toast';
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { isAuthenticated, login } = useAuth();
 
   // Check if already logged in
   useEffect(() => {
-    if (isAuthenticated()) {
+    if (isAuthenticated) {
       router.push('/dashboard');
     }
-  }, [router]);
+  }, [isAuthenticated, router]);
 
   const handleWalletLogin = async () => {
     try {
@@ -33,7 +35,7 @@ export default function LoginPage() {
       console.log(`Current wallet enum: ${chain.enum}`);
 
       // Connect wallet
-      const address = await connectWallet();
+      const address = await unisatService.getConnectedAddress();
       if (!address) {
         setError('Failed to connect wallet. Please try again.');
         setLoading(false);
@@ -44,7 +46,7 @@ export default function LoginPage() {
       const message = `Sign this message to authenticate with Satonic: ${address}`;
 
       // Sign message
-      const signature = await signMessage(message);
+      const signature = await (window as any).unisat.signMessage(message);
       if (!signature) {
         setError('Failed to sign message. Please try again.');
         setLoading(false);
@@ -61,10 +63,11 @@ export default function LoginPage() {
       }
 
       // Store authentication data
-      setAuth(response.data);
+      login(response.data.token, response.data.user);
+      toast.success('Successfully logged in');
 
       // Redirect to dashboard
-      router.push('/dashboard');
+      router.push('/');
     } catch (error) {
       console.error('Login error:', error);
       setError(error instanceof Error ? error.message : 'Failed to login. Please try again.');
